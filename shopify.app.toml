@@ -1,7 +1,7 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "59b4b79ec893b6fe3e7023c75866d0db"
-application_url = "https://example.com"
+application_url = "http://localhost:39351"
 embedded = true
 name = "MAG : Zoho Book Integration"
 
@@ -47,7 +47,7 @@ api_version = "2026-07"
   topics = [ "app/scopes_update" ]
 
 [auth]
-redirect_urls = [ ]
+redirect_urls = [ "http://localhost:39351/auth/callback", "https://localhost:39351/auth/callback" ]
 
 [build]
 include_config_on_deploy = true

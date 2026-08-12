@@ -1,0 +1,40 @@
+.mag-app-footer {
+  width: 100%;
+  padding: 24px 16px 32px;
+  box-sizing: border-box;
+}
+
+.mag-app-footer-content {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+
+  font-size: 13px;
+  color: #616161;
+  text-align: center;
+}
+
+.mag-app-footer-content a {
+  color: #005bd3;
+  text-decoration: underline;
+}
+
+.mag-app-footer-content a:hover {
+  text-decoration: none;
+}
+
+.mag-footer-divider {
+  color: #8c9196;
+}
+
+@media (max-width: 600px) {
+  .mag-app-footer {
+    padding: 20px 12px 28px;
+  }
+
+  .mag-app-footer-content {
+    font-size: 12px;
+  }
+}
