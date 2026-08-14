@@ -1,9 +1,13 @@
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { Box, InlineStack, BlockStack, Text, Icon } from "@shopify/polaris";
 import { ProductIcon, PersonIcon, OrderIcon, InventoryIcon } from "@shopify/polaris-icons";
+import { useLoaderData } from "react-router";
 import { authenticate } from "../shopify.server";
+import { getConnectionForShopDomain } from "../models/zohoConnection.server";
+import { getAuthorizationUrl } from "../zoho.server";
 import OtherApps from "../components/Common/OtherApps";
 import { useTranslation } from "../locales/translation";
+import { useZohoConnectionSync } from "../hooks/useZohoConnectionSync";
 
 const syncStats = [
   { key: "products", icon: ProductIcon, tone: "info", background: "bg-fill-info-secondary" },
@@ -13,13 +17,26 @@ const syncStats = [
 ];
 
 export const loader = async ({ request }) => {
-  await authenticate.admin(request);
+  const { session } = await authenticate.admin(request);
+  const { connection } = await getConnectionForShopDomain(session.shop);
 
-  return null;
+  return {
+    zohoConnected: Boolean(connection),
+    zohoOrganizationName: connection?.organization_name || null,
+    zohoAuthUrl: connection ? null : getAuthorizationUrl(session.shop),
+  };
 };
 
+function openZohoAuthWindow(zohoAuthUrl) {
+  // No `noopener` here on purpose - useZohoConnectionSync needs
+  // window.opener to survive so the popup can post back when it's done.
+  window.open(zohoAuthUrl, "zoho-connect", "width=600,height=720");
+}
+
 export default function Index() {
+  const { zohoConnected, zohoOrganizationName, zohoAuthUrl } = useLoaderData();
   const t = useTranslation();
+  useZohoConnectionSync();
 
   return (
     <s-page
@@ -71,17 +88,21 @@ export default function Index() {
             <s-stack gap="base">
               <s-heading>{t("dashboard.zohoBooks")}</s-heading>
 
-              <s-badge tone="warning">
-                {t("dashboard.notConnected")}
+              <s-badge tone={zohoConnected ? "success" : "warning"}>
+                {zohoConnected ? t("dashboard.connected") : t("dashboard.notConnected")}
               </s-badge>
 
               <s-paragraph>
-                {t("dashboard.zohoConnectDescription")}
+                {zohoConnected
+                  ? `${t("dashboard.zohoConnectedDescriptionPrefix")}${zohoOrganizationName}`
+                  : t("dashboard.zohoConnectDescription")}
               </s-paragraph>
 
-              <s-button variant="primary">
-                {t("dashboard.connectZohoButton")}
-              </s-button>
+              {!zohoConnected && (
+                <s-button variant="primary" onClick={() => openZohoAuthWindow(zohoAuthUrl)}>
+                  {t("dashboard.connectZohoButton")}
+                </s-button>
+              )}
             </s-stack>
           </s-box>
         </s-stack>

@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "build": "react-router build",
-    "dev": "shopify app dev",
+    "dev": "shopify app dev --tunnel-url https://insectlike-julieann-pained.ngrok-free.dev:39351",
     "config:link": "shopify app config link",
     "generate": "shopify app generate",
     "deploy": "shopify app deploy",
