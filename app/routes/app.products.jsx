@@ -8,68 +8,17 @@ import {
 } from "../models/zohoConnection.server";
 import {
   getProductMappings,
-  syncProductToZoho,
+  PRODUCTS_QUERY,
+  normalizeProductNode,
+  runProductSync,
 } from "../models/productSync.server";
-import { getAppSettings } from "../models/appSettings.server";
-import {
-  startSyncLog,
-  finishSyncLog,
-  getLatestSyncLog,
-} from "../models/syncLog.server";
+import { getLatestSyncLog } from "../models/syncLog.server";
 
 const PAGE_SIZE = 20;
 
 // Shopify admin resource URLs take the plain numeric id, not the GID.
 function shopifyNumericId(gid) {
   return gid ? gid.split("/").pop() : null;
-}
-
-const PRODUCTS_QUERY = `#graphql
-  query SyncableProducts($first: Int, $after: String, $last: Int, $before: String) {
-    products(first: $first, after: $after, last: $last, before: $before) {
-      edges {
-        node {
-          id
-          title
-          status
-          description
-          featuredMedia {
-            preview {
-              image {
-                url
-                altText
-              }
-            }
-          }
-          variants(first: 50) {
-            edges {
-              node {
-                id
-                title
-                sku
-                price
-                inventoryQuantity
-              }
-            }
-          }
-        }
-      }
-      pageInfo {
-        hasNextPage
-        hasPreviousPage
-        startCursor
-        endCursor
-      }
-    }
-  }
-`;
-
-function normalizeProductNode(node) {
-  return {
-    ...node,
-    imageUrl: node.featuredMedia?.preview?.image?.url || null,
-    variants: (node.variants?.edges || []).map(({ node: variant }) => variant),
-  };
 }
 
 // One page of products for display - cursor-based, since the Admin
@@ -94,31 +43,6 @@ async function fetchProductsPage(admin, { after, before } = {}) {
       endCursor: null,
     },
   };
-}
-
-// The "Sync now" action has to cover the whole catalog regardless of how
-// many products the page happens to be displaying - so it pages through
-// everything itself (250 at a time, the API max) rather than reusing
-// fetchProductsPage.
-async function fetchAllProductsForSync(admin) {
-  const allProducts = [];
-  let after = null;
-
-  for (;;) {
-    const response = await admin.graphql(PRODUCTS_QUERY, {
-      variables: { first: 250, after },
-    });
-    const json = await response.json();
-    const edges = json.data?.products?.edges || [];
-
-    allProducts.push(...edges.map(({ node }) => normalizeProductNode(node)));
-
-    const pageInfo = json.data?.products?.pageInfo;
-    if (!pageInfo?.hasNextPage) break;
-    after = pageInfo.endCursor;
-  }
-
-  return allProducts;
 }
 
 export const loader = async ({ request }) => {
@@ -171,39 +95,7 @@ export const action = async ({ request }) => {
     organizationId: connection.organization_id,
   };
 
-  const logId = await startSyncLog(shop.id, {
-    entityType: "product",
-    direction: "shopify_to_zoho",
-  });
-
-  const products = await fetchAllProductsForSync(admin);
-  const mappings = await getProductMappings(shop.id);
-  const appSettings = await getAppSettings(shop.id);
-  const inventoryAccountId = appSettings.accountSettings?.inventoryAccountId;
-
-  const results = [];
-  for (const product of products) {
-    results.push(
-      ...(await syncProductToZoho({
-        shopId: shop.id,
-        zohoAuth,
-        product,
-        mappings,
-        inventoryAccountId,
-      })),
-    );
-  }
-
-  const attempted = results.filter((result) => result.status !== "skipped");
-
-  await finishSyncLog(logId, {
-    recordsProcessed: attempted.length,
-    recordsSuccess: attempted.filter((result) => result.status === "success")
-      .length,
-    recordsFailed: attempted.filter((result) => result.status === "error")
-      .length,
-    metadata: attempted,
-  });
+  await runProductSync({ admin, shop, zohoAuth });
 
   return null;
 };

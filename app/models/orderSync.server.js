@@ -12,8 +12,19 @@ import { getAppSettings } from "./appSettings.server";
 import { syncVariantToZoho, getProductMappings } from "./productSync.server";
 import { syncCustomerToZoho, getCustomerMappings } from "./customerSync.server";
 import { recordWebhookReceived, finishWebhookLog } from "./webhookLog.server";
+import { startSyncLog, finishSyncLog } from "./syncLog.server";
 
 const ENTITY_TYPE = "order";
+
+// Used by the Dashboard's "Synchronization Overview" stat tile.
+export async function getSyncedOrderCount(shopId) {
+  const [rows] = await db.execute(
+    `SELECT COUNT(*) AS count FROM sync_mappings WHERE shop_id = ? AND entity_type = ? AND status = 'synced'`,
+    [shopId, ENTITY_TYPE],
+  );
+
+  return rows[0]?.count || 0;
+}
 
 // ZohoApiError's `.message` is just a generic label ("Failed to update Zoho
 // sales order") - the actual reason Zoho gave lives in `.details`. Folding
@@ -144,11 +155,34 @@ export function buildZohoSalesOrderPayload(order, { customerId, lineItems, taxSe
 // wait on someone visiting the Products page first. Line items without a
 // SKU or a real variant (custom/manual line items) are skipped, same as
 // product sync skips variants without a SKU.
-async function resolveOrderLineItems({ shopId, zohoAuth, order, productMappings, inventoryAccountId }) {
+async function resolveOrderLineItems({ shopId, admin, zohoAuth, order, productMappings, inventoryAccountId }) {
   const resolved = [];
 
   for (const lineItem of order.lineItems) {
     if (!lineItem.sku || !lineItem.variantId) continue;
+
+    const existingZohoItemId = productMappings[lineItem.variantId]?.zohoId;
+
+    if (existingZohoItemId) {
+      // Already linked - reuse it as-is rather than calling
+      // syncVariantToZoho again. An order's line item only carries
+      // `lineItem.title` (no separate product/variant title), so
+      // reconstructing a synthetic product+variant pair from it and
+      // updating the Zoho item would rename it using that duplicated
+      // title (e.g. "X - X" instead of the item's real "X - Special X") -
+      // confirmed live to collide with a differently-named existing item
+      // and fail with Zoho error 1001 ("Item already exists"). It would
+      // also silently overwrite the item's catalog rate with this one
+      // order's line item price. Order sync only needs the link, not a
+      // second, worse source of truth for the item's own fields - the
+      // Products page already owns keeping name/price accurate.
+      resolved.push({
+        zohoItemId: existingZohoItemId,
+        quantity: lineItem.quantity,
+        price: lineItem.price,
+      });
+      continue;
+    }
 
     const variant = {
       id: lineItem.variantId,
@@ -165,6 +199,7 @@ async function resolveOrderLineItems({ shopId, zohoAuth, order, productMappings,
 
     const result = await syncVariantToZoho({
       shopId,
+      admin,
       zohoAuth,
       product,
       variant,
@@ -189,8 +224,18 @@ async function resolveOrderLineItems({ shopId, zohoAuth, order, productMappings,
 // totalDiscount, totalShipping, totalTax, note, discountCodes } - the same
 // shape whether it came from the Admin GraphQL orders query or was
 // normalized from a REST webhook payload.
+// `admin` is optional (only passed by the direct "Sync now"/"Sync
+// everything" call path, which has it readily available) - it's only used
+// to also enforce oversell prevention on any variant discovered for the
+// first time via an order's line items (see denyOversellForVariant in
+// productSync.server.js). Webhook/invoice-triggered call sites don't pass
+// it, which just means that one thin edge case (a brand-new variant seen
+// only through an order webhook, never through product sync) doesn't get
+// the policy enforced immediately - it still will next time a product sync
+// touches that variant.
 export async function syncOrderToZoho({
   shopId,
+  admin,
   zohoAuth,
   order,
   taxSettings,
@@ -217,6 +262,7 @@ export async function syncOrderToZoho({
 
   const lineItems = await resolveOrderLineItems({
     shopId,
+    admin,
     zohoAuth,
     order,
     productMappings,
@@ -262,6 +308,303 @@ export async function syncOrderToZoho({
 
     return { orderName: order.name, status: "error", error: description };
   }
+}
+
+// Shared by `app.orders.jsx`'s loader (paginated display) and the
+// sync-all/sync-now helpers below.
+export const ORDERS_QUERY = `#graphql
+  query SyncableOrders($first: Int, $after: String, $last: Int, $before: String) {
+    orders(first: $first, after: $after, last: $last, before: $before, sortKey: CREATED_AT, reverse: true) {
+      edges {
+        node {
+          id
+          name
+          createdAt
+          updatedAt
+          email
+          phone
+          displayFinancialStatus
+          totalPriceSet {
+            shopMoney {
+              amount
+            }
+          }
+          paymentGatewayNames
+          customer {
+            id
+            firstName
+            lastName
+            email
+            phone
+            defaultAddress {
+              address1
+              address2
+              city
+              province
+              zip
+              country
+              phone
+            }
+          }
+          billingAddress {
+            firstName
+            lastName
+            address1
+            address2
+            city
+            province
+            zip
+            country
+            phone
+          }
+          lineItems(first: 50) {
+            edges {
+              node {
+                title
+                sku
+                quantity
+                variant {
+                  id
+                  product {
+                    id
+                  }
+                }
+                originalUnitPriceSet {
+                  shopMoney {
+                    amount
+                  }
+                }
+              }
+            }
+          }
+          totalDiscountsSet {
+            shopMoney {
+              amount
+            }
+          }
+          totalShippingPriceSet {
+            shopMoney {
+              amount
+            }
+          }
+          totalTaxSet {
+            shopMoney {
+              amount
+            }
+          }
+          note
+          discountCodes
+        }
+      }
+      pageInfo {
+        hasNextPage
+        hasPreviousPage
+        startCursor
+        endCursor
+      }
+    }
+  }
+`;
+
+export function normalizeOrderNode(node) {
+  const address = node.customer?.defaultAddress || {};
+
+  return {
+    id: node.id,
+    name: node.name,
+    createdAt: node.createdAt,
+    updatedAt: node.updatedAt,
+    email: node.email || null,
+    phone: node.phone || null,
+    financialStatus: node.displayFinancialStatus || null,
+    totalPrice: node.totalPriceSet?.shopMoney?.amount,
+    paymentGatewayNames: node.paymentGatewayNames || [],
+    customer: node.customer
+      ? {
+          id: node.customer.id,
+          firstName: node.customer.firstName || "",
+          lastName: node.customer.lastName || "",
+          email: node.customer.email || node.email || "",
+          phone: node.customer.phone || node.phone || "",
+          address: {
+            address1: address.address1 || "",
+            address2: address.address2 || "",
+            city: address.city || "",
+            province: address.province || "",
+            zip: address.zip || "",
+            country: address.country || "",
+            phone: address.phone || "",
+          },
+        }
+      : null,
+    billingAddress: {
+      firstName: node.billingAddress?.firstName || "",
+      lastName: node.billingAddress?.lastName || "",
+      address1: node.billingAddress?.address1 || "",
+      address2: node.billingAddress?.address2 || "",
+      city: node.billingAddress?.city || "",
+      province: node.billingAddress?.province || "",
+      zip: node.billingAddress?.zip || "",
+      country: node.billingAddress?.country || "",
+      phone: node.billingAddress?.phone || "",
+    },
+    lineItems: (node.lineItems?.edges || []).map(({ node: lineItem }) => ({
+      variantId: lineItem.variant?.id || null,
+      productId: lineItem.variant?.product?.id || null,
+      sku: lineItem.sku,
+      title: lineItem.title,
+      quantity: lineItem.quantity,
+      price: lineItem.originalUnitPriceSet?.shopMoney?.amount,
+    })),
+    totalDiscount: node.totalDiscountsSet?.shopMoney?.amount,
+    totalShipping: node.totalShippingPriceSet?.shopMoney?.amount,
+    totalTax: node.totalTaxSet?.shopMoney?.amount,
+    note: node.note || "",
+    discountCodes: node.discountCodes || [],
+  };
+}
+
+// The "Sync now"/"Sync everything" actions have to cover the whole order
+// list regardless of how many orders a page happens to be displaying - so
+// this pages through everything itself (250 at a time, the API max) rather
+// than reusing the paginated display query.
+async function fetchAllOrdersForSync(admin) {
+  const allOrders = [];
+  let after = null;
+
+  for (;;) {
+    const response = await admin.graphql(ORDERS_QUERY, {
+      variables: { first: 250, after },
+    });
+    const json = await response.json();
+    const edges = json.data?.orders?.edges || [];
+
+    allOrders.push(...edges.map(({ node }) => normalizeOrderNode(node)));
+
+    const pageInfo = json.data?.orders?.pageInfo;
+    if (!pageInfo?.hasNextPage) break;
+    after = pageInfo.endCursor;
+  }
+
+  return allOrders;
+}
+
+// Shared by `app.orders.jsx`'s own "Sync now" button and the Dashboard's
+// "Sync everything" button (`app._index.jsx`) - covers order sync AND the
+// invoice/payment backfill for already-paid orders, matching exactly what
+// clicking "Sync now" on the Orders page has always done. Lives here (not
+// in a route file) so it stays guaranteed server-only regardless of which
+// route imports it.
+//
+// `syncInvoiceAndPaymentForOrder` is imported dynamically rather than at
+// the top of this file - `paymentSync.server.js` already imports several
+// things FROM this file (getOrderMappings, normalizeRestOrder,
+// buildOrderCustomer), so a static top-level import back the other way
+// would make the two modules circularly dependent at load time. Resolving
+// it lazily, only once this function actually runs, sidesteps that
+// entirely without needing to relocate either module's code.
+export async function runOrderSync({ admin, shop, zohoAuth }) {
+  const { syncInvoiceAndPaymentForOrder } = await import("./paymentSync.server");
+
+  const logId = await startSyncLog(shop.id, {
+    entityType: "order",
+    direction: "shopify_to_zoho",
+  });
+
+  const appSettings = await getAppSettings(shop.id);
+  const orders = await fetchAllOrdersForSync(admin);
+  const [productMappings, customerMappings, orderMappings] = await Promise.all([
+    getProductMappings(shop.id),
+    getCustomerMappings(shop.id),
+    getOrderMappings(shop.id),
+  ]);
+
+  const inventoryAccountId = appSettings.accountSettings?.inventoryAccountId;
+
+  const results = [];
+  for (const order of orders) {
+    results.push(
+      await syncOrderToZoho({
+        shopId: shop.id,
+        admin,
+        zohoAuth,
+        order,
+        taxSettings: appSettings.taxSettings || {},
+        productMappings,
+        customerMappings,
+        orderMappings,
+        inventoryAccountId,
+      }),
+    );
+  }
+
+  const attempted = results.filter((result) => result.status !== "skipped");
+
+  await finishSyncLog(logId, {
+    recordsProcessed: attempted.length,
+    recordsSuccess: attempted.filter((result) => result.status === "success").length,
+    recordsFailed: attempted.filter((result) => result.status === "error").length,
+    metadata: attempted,
+  });
+
+  // Backfill invoices + payments for already-paid orders that don't have
+  // them yet - covers orders paid before Zoho was connected, or before the
+  // orders/paid webhook existed, since Shopify never replays past webhook
+  // events for a new subscription. Re-fetch order mappings fresh (rather
+  // than reusing the snapshot above) since the sales-order loop just above
+  // may have just created brand new ones - reusing the stale snapshot
+  // would make syncInvoiceForOrder think those orders still need a sales
+  // order and create a duplicate one.
+  const invoiceLogId = await startSyncLog(shop.id, {
+    entityType: "invoice",
+    direction: "shopify_to_zoho",
+  });
+  const paymentLogId = await startSyncLog(shop.id, {
+    entityType: "payment",
+    direction: "shopify_to_zoho",
+  });
+
+  const freshOrderMappings = await getOrderMappings(shop.id);
+  const paidOrders = orders.filter((order) => order.financialStatus === "PAID");
+
+  const invoiceResults = [];
+  const paymentResults = [];
+  for (const order of paidOrders) {
+    const { invoice, payment } = await syncInvoiceAndPaymentForOrder({
+      shopId: shop.id,
+      zohoAuth,
+      order,
+      taxSettings: appSettings.taxSettings || {},
+      accountSettings: appSettings.accountSettings || {},
+      productMappings,
+      customerMappings,
+      orderMappings: freshOrderMappings,
+    });
+    invoiceResults.push(invoice);
+    if (payment) paymentResults.push(payment);
+  }
+
+  const invoiceAttempted = invoiceResults.filter((result) => result.status !== "skipped");
+  const paymentAttempted = paymentResults.filter((result) => result.status !== "skipped");
+
+  await finishSyncLog(invoiceLogId, {
+    recordsProcessed: invoiceAttempted.length,
+    recordsSuccess: invoiceAttempted.filter((result) => result.status === "success").length,
+    recordsFailed: invoiceAttempted.filter((result) => result.status === "error").length,
+    metadata: invoiceAttempted,
+  });
+  await finishSyncLog(paymentLogId, {
+    recordsProcessed: paymentAttempted.length,
+    recordsSuccess: paymentAttempted.filter((result) => result.status === "success").length,
+    recordsFailed: paymentAttempted.filter((result) => result.status === "error").length,
+    metadata: paymentAttempted,
+  });
+
+  return {
+    processed: attempted.length,
+    success: attempted.filter((result) => result.status === "success").length,
+    failed: attempted.filter((result) => result.status === "error").length,
+  };
 }
 
 // Shopify's orders/create and orders/updated webhooks deliver the classic

@@ -12,8 +12,32 @@ import {
 } from "./zohoConnection.server";
 import { recordWebhookReceived, finishWebhookLog } from "./webhookLog.server";
 import { getAppSettings } from "./appSettings.server";
+import { startSyncLog, finishSyncLog } from "./syncLog.server";
 
 const ENTITY_TYPE = "product";
+
+// ZohoApiError's `.message` is just a generic label - the actual reason
+// Zoho gave lives in `.details`. Folding it into the stored string means
+// the real cause shows up in sync_mappings/sync_logs directly, instead of
+// only being visible via a live diagnostic script. (Confirmed the cost of
+// not having this: diagnosing a real order-sync bug on 2026-08-17 needed
+// three separate live Zoho API calls just to see an error this would have
+// surfaced immediately.)
+function describeZohoError(error) {
+  return error.details ? `${error.message}: ${JSON.stringify(error.details)}` : error.message;
+}
+
+// Used by the Dashboard's "Synchronization Overview" stat tile - counts
+// variants with a real, currently-synced link to a Zoho item (not attempts
+// that ended in error).
+export async function getSyncedProductCount(shopId) {
+  const [rows] = await db.execute(
+    `SELECT COUNT(*) AS count FROM sync_mappings WHERE shop_id = ? AND entity_type = ? AND status = 'synced'`,
+    [shopId, ENTITY_TYPE],
+  );
+
+  return rows[0]?.count || 0;
+}
 
 export async function getProductMappings(shopId) {
   const [rows] = await db.execute(
@@ -121,12 +145,61 @@ export function buildZohoItemPayload(product, variant, { inventoryAccountId } = 
   };
 }
 
+// Confirmed against the live Admin GraphQL schema via the Shopify AI
+// Toolkit before writing this.
+const SET_VARIANT_INVENTORY_POLICY_MUTATION = `#graphql
+  mutation SetVariantInventoryPolicy($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+    productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+`;
+
+// An accurate synced stock number alone doesn't stop overselling - Shopify
+// only blocks checkout at zero if the variant's own `inventoryPolicy` is
+// "DENY" ("CONTINUE" allows selling past zero, i.e. backorders). Whenever a
+// variant becomes inventory-tracked via Zoho, this forces that setting so
+// the number this app is already syncing actually has teeth. Always sent
+// rather than checked-then-conditionally-updated - nothing in this app
+// currently reads a variant's existing inventoryPolicy, and Shopify accepts
+// a same-value update as a harmless no-op. Silently does nothing if there's
+// no `admin` client (e.g. a webhook with no stored session) or no parent
+// product id (e.g. a guest/custom order line item with no real product) -
+// this is a best-effort enforcement layer, not something sync itself
+// should fail over.
+async function denyOversellForVariant(admin, product, variant) {
+  if (!admin || !product?.id) return;
+
+  const response = await admin.graphql(SET_VARIANT_INVENTORY_POLICY_MUTATION, {
+    variables: {
+      productId: product.id,
+      variants: [{ id: variant.id, inventoryPolicy: "DENY" }],
+    },
+  });
+  const json = await response.json();
+  const userErrors = json.data?.productVariantsBulkUpdate?.userErrors || [];
+
+  if (userErrors.length > 0) {
+    console.error(
+      "Failed to set inventoryPolicy=DENY for variant",
+      variant.id,
+      userErrors,
+    );
+  }
+}
+
 // `product` is { id, title, status, description, variants: [...] } and
 // `variant` is { id, title, sku, price } - the same shape whether it came
 // from the Admin GraphQL products query or was normalized from a REST
 // webhook payload (see the products.create/update webhook routes).
+// `admin` is optional - only needed to also enforce oversell prevention
+// (see denyOversellForVariant); the Zoho-side sync itself doesn't need it.
 export async function syncVariantToZoho({
   shopId,
+  admin,
   zohoAuth,
   product,
   variant,
@@ -166,17 +239,23 @@ export async function syncVariantToZoho({
     );
     await saveProductMapping(shopId, variant.id, zohoItemId, product.id);
 
+    if (inventoryAccountId) {
+      await denyOversellForVariant(admin, product, variant);
+    }
+
     return { sku: variant.sku, zohoItemId, status: "success" };
   } catch (error) {
     console.error("Failed to sync product variant to Zoho", variant.sku, error);
-    await markProductMappingError(shopId, variant.id, error.message);
+    const description = describeZohoError(error);
+    await markProductMappingError(shopId, variant.id, description);
 
-    return { sku: variant.sku, status: "error", error: error.message };
+    return { sku: variant.sku, status: "error", error: description };
   }
 }
 
 export async function syncProductToZoho({
   shopId,
+  admin,
   zohoAuth,
   product,
   mappings,
@@ -188,6 +267,7 @@ export async function syncProductToZoho({
     results.push(
       await syncVariantToZoho({
         shopId,
+        admin,
         zohoAuth,
         product,
         variant,
@@ -198,6 +278,129 @@ export async function syncProductToZoho({
   }
 
   return results;
+}
+
+// Shared by `app.products.jsx`'s loader (paginated display) and the
+// sync-all/sync-now helpers below, so the GraphQL shape used for syncing
+// stays identical to what's shown on the Products page.
+export const PRODUCTS_QUERY = `#graphql
+  query SyncableProducts($first: Int, $after: String, $last: Int, $before: String) {
+    products(first: $first, after: $after, last: $last, before: $before) {
+      edges {
+        node {
+          id
+          title
+          status
+          description
+          featuredMedia {
+            preview {
+              image {
+                url
+                altText
+              }
+            }
+          }
+          variants(first: 50) {
+            edges {
+              node {
+                id
+                title
+                sku
+                price
+                inventoryQuantity
+              }
+            }
+          }
+        }
+      }
+      pageInfo {
+        hasNextPage
+        hasPreviousPage
+        startCursor
+        endCursor
+      }
+    }
+  }
+`;
+
+export function normalizeProductNode(node) {
+  return {
+    ...node,
+    imageUrl: node.featuredMedia?.preview?.image?.url || null,
+    variants: (node.variants?.edges || []).map(({ node: variant }) => variant),
+  };
+}
+
+// The "Sync now"/"Sync everything" actions have to cover the whole catalog
+// regardless of how many products a page happens to be displaying - so this
+// pages through everything itself (250 at a time, the API max) rather than
+// reusing the paginated display query.
+async function fetchAllProductsForSync(admin) {
+  const allProducts = [];
+  let after = null;
+
+  for (;;) {
+    const response = await admin.graphql(PRODUCTS_QUERY, {
+      variables: { first: 250, after },
+    });
+    const json = await response.json();
+    const edges = json.data?.products?.edges || [];
+
+    allProducts.push(...edges.map(({ node }) => normalizeProductNode(node)));
+
+    const pageInfo = json.data?.products?.pageInfo;
+    if (!pageInfo?.hasNextPage) break;
+    after = pageInfo.endCursor;
+  }
+
+  return allProducts;
+}
+
+// Shared by `app.products.jsx`'s own "Sync now" button and the Dashboard's
+// "Sync everything" button (`app._index.jsx`) - lives here (not in either
+// route file) so it stays guaranteed server-only (`.server.js`) regardless
+// of which route imports it, rather than relying on route-to-route imports
+// being handled correctly by React Router's client/server code-splitting.
+export async function runProductSync({ admin, shop, zohoAuth }) {
+  const logId = await startSyncLog(shop.id, {
+    entityType: "product",
+    direction: "shopify_to_zoho",
+  });
+
+  const products = await fetchAllProductsForSync(admin);
+  const mappings = await getProductMappings(shop.id);
+  const appSettings = await getAppSettings(shop.id);
+  const inventoryAccountId = appSettings.accountSettings?.inventoryAccountId;
+
+  const results = [];
+  for (const product of products) {
+    results.push(
+      ...(await syncProductToZoho({
+        shopId: shop.id,
+        admin,
+        zohoAuth,
+        product,
+        mappings,
+        inventoryAccountId,
+      })),
+    );
+  }
+
+  const attempted = results.filter((result) => result.status !== "skipped");
+  const summary = {
+    processed: attempted.length,
+    success: attempted.filter((result) => result.status === "success").length,
+    failed: attempted.filter((result) => result.status === "error").length,
+  };
+
+  await finishSyncLog(logId, {
+    recordsProcessed: summary.processed,
+    recordsSuccess: summary.success,
+    recordsFailed: summary.failed,
+    metadata: attempted,
+  });
+
+  return summary;
 }
 
 // Shopify's products/create and products/update webhooks deliver the
@@ -233,6 +436,7 @@ export async function processProductUpsertWebhook({
   topic,
   webhookId,
   payload,
+  admin,
 }) {
   const { shop, connection } = await getConnectionForShopDomain(shopDomain);
 
@@ -269,6 +473,7 @@ export async function processProductUpsertWebhook({
 
     const results = await syncProductToZoho({
       shopId: shop.id,
+      admin,
       zohoAuth,
       product,
       mappings,

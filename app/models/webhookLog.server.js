@@ -30,17 +30,35 @@ export async function recordWebhookReceived(
   }
 }
 
-export async function finishWebhookLog(logId, { status, errorMessage }) {
+export async function finishWebhookLog(
+  logId,
+  { status, errorMessage, resourceLabel },
+) {
   await db.execute(
-    `UPDATE webhook_logs SET status = ?, error_message = ?, attempts = attempts + 1, processed_at = NOW() WHERE id = ?`,
-    [status, errorMessage || null, logId],
+    `UPDATE webhook_logs SET status = ?, error_message = ?, resource_label = ?, attempts = attempts + 1, processed_at = NOW() WHERE id = ?`,
+    [status, errorMessage || null, resourceLabel || null, logId],
   );
+}
+
+// Used by the Dashboard's "Synchronization Overview" stat tile - inventory
+// has no `sync_mappings` entity_type of its own (it rides on the product
+// mapping + a warehouse mapping), so a real stock push count is the closest
+// analog to "how many records are synced" that products/customers/orders
+// show, using data this app already records rather than inventing a new
+// running total.
+export async function getSyncedWebhookCount(shopId, topic) {
+  const [rows] = await db.execute(
+    `SELECT COUNT(*) AS count FROM webhook_logs WHERE shop_id = ? AND topic = ? AND status = 'synced'`,
+    [shopId, topic],
+  );
+
+  return rows[0]?.count || 0;
 }
 
 export async function getRecentWebhookLogs(shopId, topic, limit = 10) {
   const safeLimit = Number.isInteger(limit) ? limit : 10;
   const [rows] = await db.execute(
-    `SELECT topic, resource_id, status, error_message, received_at, processed_at FROM webhook_logs WHERE shop_id = ? AND topic = ? ORDER BY id DESC LIMIT ${safeLimit}`,
+    `SELECT topic, resource_id, resource_label, status, error_message, received_at, processed_at FROM webhook_logs WHERE shop_id = ? AND topic = ? ORDER BY id DESC LIMIT ${safeLimit}`,
     [shopId, topic],
   );
 

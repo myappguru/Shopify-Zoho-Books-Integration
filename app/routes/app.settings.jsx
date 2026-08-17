@@ -196,9 +196,18 @@ export const loader = async ({ request }) => {
 
   const locationsResponse = await admin.graphql(LOCATIONS_QUERY);
   const locationsJson = await locationsResponse.json();
+
+  if (locationsJson.errors) {
+    console.error(
+      "Shopify locations query returned GraphQL errors",
+      JSON.stringify(locationsJson.errors),
+    );
+  }
+
   const locations = (locationsJson.data?.locations?.edges || []).map(
     ({ node }) => node,
   );
+  const locationsError = Boolean(locationsJson.errors) && locations.length === 0;
 
   return {
     connection: connection
@@ -211,6 +220,7 @@ export const loader = async ({ request }) => {
       : null,
     organization,
     locations,
+    locationsError,
     warehouses,
     warehouseMappings,
     warehouseSyncError,
@@ -347,6 +357,7 @@ export default function SettingsPage() {
     connection,
     organization,
     locations,
+    locationsError,
     warehouses,
     warehouseMappings,
     warehouseSyncError,
@@ -612,8 +623,31 @@ export default function SettingsPage() {
                   </s-banner>
                 )}
 
+                {locationsError && (
+                  <s-banner heading="Couldn't load Shopify locations" tone="critical">
+                    Shopify&apos;s locations query returned an error instead
+                    of data - check the server logs for the exact GraphQL
+                    error. This is different from having zero locations.
+                  </s-banner>
+                )}
+
+                {!warehouseSyncError && warehouses.length === 0 && (
+                  <s-banner heading="No Zoho warehouses found" tone="warning">
+                    Zoho successfully returned an empty warehouse list - your
+                    Zoho Inventory organization doesn&apos;t have any
+                    warehouses set up yet. Create at least one in Zoho
+                    (Inventory settings → Warehouses), then use the
+                    &quot;Refresh from Zoho&quot; button on the Organization
+                    settings tab to pull it in here.
+                  </s-banner>
+                )}
+
                 {locations.length === 0 ? (
-                  <s-paragraph>No Shopify locations found.</s-paragraph>
+                  <s-paragraph>
+                    {locationsError
+                      ? "Couldn't load Shopify locations (see above)."
+                      : "No Shopify locations found."}
+                  </s-paragraph>
                 ) : (
                   <Form method="post">
                     <input

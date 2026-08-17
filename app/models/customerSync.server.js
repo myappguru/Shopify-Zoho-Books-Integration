@@ -11,8 +11,27 @@ import {
   getValidAccessToken,
 } from "./zohoConnection.server";
 import { recordWebhookReceived, finishWebhookLog } from "./webhookLog.server";
+import { startSyncLog, finishSyncLog } from "./syncLog.server";
 
 const ENTITY_TYPE = "customer";
+
+// ZohoApiError's `.message` is just a generic label - the actual reason
+// Zoho gave lives in `.details`. Folding it into the stored string means
+// the real cause shows up in sync_mappings/sync_logs directly, instead of
+// only being visible via a live diagnostic script.
+function describeZohoError(error) {
+  return error.details ? `${error.message}: ${JSON.stringify(error.details)}` : error.message;
+}
+
+// Used by the Dashboard's "Synchronization Overview" stat tile.
+export async function getSyncedCustomerCount(shopId) {
+  const [rows] = await db.execute(
+    `SELECT COUNT(*) AS count FROM sync_mappings WHERE shop_id = ? AND entity_type = ? AND status = 'synced'`,
+    [shopId, ENTITY_TYPE],
+  );
+
+  return rows[0]?.count || 0;
+}
 
 export async function getCustomerMappings(shopId) {
   const [rows] = await db.execute(
@@ -153,10 +172,126 @@ export async function syncCustomerToZoho({
     return { email: customer.email, zohoContactId, status: "success" };
   } catch (error) {
     console.error("Failed to sync customer to Zoho", customer.email, error);
-    await markCustomerMappingError(shopId, customer.id, error.message);
+    const description = describeZohoError(error);
+    await markCustomerMappingError(shopId, customer.id, description);
 
-    return { email: customer.email, status: "error", error: error.message };
+    return { email: customer.email, status: "error", error: description };
   }
+}
+
+// Shared by `app.customers.jsx`'s loader (paginated display) and the
+// sync-all/sync-now helpers below.
+export const CUSTOMERS_QUERY = `#graphql
+  query SyncableCustomers($first: Int, $after: String, $last: Int, $before: String) {
+    customers(first: $first, after: $after, last: $last, before: $before) {
+      edges {
+        node {
+          id
+          firstName
+          lastName
+          email
+          phone
+          defaultAddress {
+            address1
+            address2
+            city
+            province
+            zip
+            country
+            phone
+          }
+        }
+      }
+      pageInfo {
+        hasNextPage
+        hasPreviousPage
+        startCursor
+        endCursor
+      }
+    }
+  }
+`;
+
+export function normalizeCustomerNode(node) {
+  const address = node.defaultAddress || {};
+
+  return {
+    id: node.id,
+    firstName: node.firstName || "",
+    lastName: node.lastName || "",
+    email: node.email || "",
+    phone: node.phone || "",
+    address: {
+      address1: address.address1 || "",
+      address2: address.address2 || "",
+      city: address.city || "",
+      province: address.province || "",
+      zip: address.zip || "",
+      country: address.country || "",
+      phone: address.phone || "",
+    },
+  };
+}
+
+// The "Sync now"/"Sync everything" actions have to cover the whole customer
+// list regardless of how many the page happens to be displaying - so it
+// pages through everything itself (250 at a time, the API max) rather than
+// reusing the paginated display query.
+async function fetchAllCustomersForSync(admin) {
+  const allCustomers = [];
+  let after = null;
+
+  for (;;) {
+    const response = await admin.graphql(CUSTOMERS_QUERY, {
+      variables: { first: 250, after },
+    });
+    const json = await response.json();
+    const edges = json.data?.customers?.edges || [];
+
+    allCustomers.push(...edges.map(({ node }) => normalizeCustomerNode(node)));
+
+    const pageInfo = json.data?.customers?.pageInfo;
+    if (!pageInfo?.hasNextPage) break;
+    after = pageInfo.endCursor;
+  }
+
+  return allCustomers;
+}
+
+// Shared by `app.customers.jsx`'s own "Sync now" button and the Dashboard's
+// "Sync everything" button (`app._index.jsx`) - lives here so it stays
+// guaranteed server-only regardless of which route imports it.
+export async function runCustomerSync({ admin, shop, zohoAuth }) {
+  const logId = await startSyncLog(shop.id, {
+    entityType: "customer",
+    direction: "shopify_to_zoho",
+  });
+
+  const customers = await fetchAllCustomersForSync(admin);
+  const mappings = await getCustomerMappings(shop.id);
+
+  const results = [];
+  for (const customer of customers) {
+    results.push(
+      await syncCustomerToZoho({ shopId: shop.id, zohoAuth, customer, mappings }),
+    );
+  }
+
+  const attempted = results.filter((result) => result.status !== "skipped");
+  const summary = {
+    processed: attempted.length,
+    success: attempted.filter((result) => result.status === "success").length,
+    failed: attempted.filter((result) => result.status === "error").length,
+  };
+
+  await finishSyncLog(logId, {
+    recordsProcessed: summary.processed,
+    recordsSuccess: summary.success,
+    recordsFailed: summary.failed,
+    metadata: attempted,
+  });
+
+  return summary;
 }
 
 // Shopify's customers/create and customers/update webhooks deliver the

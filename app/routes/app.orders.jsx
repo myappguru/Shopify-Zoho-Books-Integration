@@ -6,181 +6,21 @@ import {
   getConnectionForShopDomain,
   getValidAccessToken,
 } from "../models/zohoConnection.server";
-import { getAppSettings } from "../models/appSettings.server";
-import { getProductMappings } from "../models/productSync.server";
-import { getCustomerMappings } from "../models/customerSync.server";
 import {
   getOrderMappings,
-  syncOrderToZoho,
+  ORDERS_QUERY,
+  normalizeOrderNode,
+  runOrderSync,
 } from "../models/orderSync.server";
 import { getInvoiceMappings } from "../models/invoiceSync.server";
-import {
-  getPaymentMappings,
-  syncInvoiceAndPaymentForOrder,
-} from "../models/paymentSync.server";
-import {
-  startSyncLog,
-  finishSyncLog,
-  getLatestSyncLog,
-} from "../models/syncLog.server";
+import { getPaymentMappings } from "../models/paymentSync.server";
+import { getLatestSyncLog } from "../models/syncLog.server";
 
 const PAGE_SIZE = 20;
 
 // Shopify admin resource URLs take the plain numeric id, not the GID.
 function shopifyNumericId(gid) {
   return gid ? gid.split("/").pop() : null;
-}
-
-const ORDERS_QUERY = `#graphql
-  query SyncableOrders($first: Int, $after: String, $last: Int, $before: String) {
-    orders(first: $first, after: $after, last: $last, before: $before, sortKey: CREATED_AT, reverse: true) {
-      edges {
-        node {
-          id
-          name
-          createdAt
-          updatedAt
-          email
-          phone
-          displayFinancialStatus
-          totalPriceSet {
-            shopMoney {
-              amount
-            }
-          }
-          paymentGatewayNames
-          customer {
-            id
-            firstName
-            lastName
-            email
-            phone
-            defaultAddress {
-              address1
-              address2
-              city
-              province
-              zip
-              country
-              phone
-            }
-          }
-          billingAddress {
-            firstName
-            lastName
-            address1
-            address2
-            city
-            province
-            zip
-            country
-            phone
-          }
-          lineItems(first: 50) {
-            edges {
-              node {
-                title
-                sku
-                quantity
-                variant {
-                  id
-                  product {
-                    id
-                  }
-                }
-                originalUnitPriceSet {
-                  shopMoney {
-                    amount
-                  }
-                }
-              }
-            }
-          }
-          totalDiscountsSet {
-            shopMoney {
-              amount
-            }
-          }
-          totalShippingPriceSet {
-            shopMoney {
-              amount
-            }
-          }
-          totalTaxSet {
-            shopMoney {
-              amount
-            }
-          }
-          note
-          discountCodes
-        }
-      }
-      pageInfo {
-        hasNextPage
-        hasPreviousPage
-        startCursor
-        endCursor
-      }
-    }
-  }
-`;
-
-function normalizeOrderNode(node) {
-  const address = node.customer?.defaultAddress || {};
-
-  return {
-    id: node.id,
-    name: node.name,
-    createdAt: node.createdAt,
-    updatedAt: node.updatedAt,
-    email: node.email || null,
-    phone: node.phone || null,
-    financialStatus: node.displayFinancialStatus || null,
-    totalPrice: node.totalPriceSet?.shopMoney?.amount,
-    paymentGatewayNames: node.paymentGatewayNames || [],
-    customer: node.customer
-      ? {
-          id: node.customer.id,
-          firstName: node.customer.firstName || "",
-          lastName: node.customer.lastName || "",
-          email: node.customer.email || node.email || "",
-          phone: node.customer.phone || node.phone || "",
-          address: {
-            address1: address.address1 || "",
-            address2: address.address2 || "",
-            city: address.city || "",
-            province: address.province || "",
-            zip: address.zip || "",
-            country: address.country || "",
-            phone: address.phone || "",
-          },
-        }
-      : null,
-    billingAddress: {
-      firstName: node.billingAddress?.firstName || "",
-      lastName: node.billingAddress?.lastName || "",
-      address1: node.billingAddress?.address1 || "",
-      address2: node.billingAddress?.address2 || "",
-      city: node.billingAddress?.city || "",
-      province: node.billingAddress?.province || "",
-      zip: node.billingAddress?.zip || "",
-      country: node.billingAddress?.country || "",
-      phone: node.billingAddress?.phone || "",
-    },
-    lineItems: (node.lineItems?.edges || []).map(({ node: lineItem }) => ({
-      variantId: lineItem.variant?.id || null,
-      productId: lineItem.variant?.product?.id || null,
-      sku: lineItem.sku,
-      title: lineItem.title,
-      quantity: lineItem.quantity,
-      price: lineItem.originalUnitPriceSet?.shopMoney?.amount,
-    })),
-    totalDiscount: node.totalDiscountsSet?.shopMoney?.amount,
-    totalShipping: node.totalShippingPriceSet?.shopMoney?.amount,
-    totalTax: node.totalTaxSet?.shopMoney?.amount,
-    note: node.note || "",
-    discountCodes: node.discountCodes || [],
-  };
 }
 
 // One page of orders for display - cursor-based, since the Admin GraphQL
@@ -205,31 +45,6 @@ async function fetchOrdersPage(admin, { after, before } = {}) {
       endCursor: null,
     },
   };
-}
-
-// The "Sync now" action has to cover the whole order list regardless of how
-// many orders the page happens to be displaying - so it pages through
-// everything itself (250 at a time, the API max) rather than reusing
-// fetchOrdersPage.
-async function fetchAllOrdersForSync(admin) {
-  const allOrders = [];
-  let after = null;
-
-  for (;;) {
-    const response = await admin.graphql(ORDERS_QUERY, {
-      variables: { first: 250, after },
-    });
-    const json = await response.json();
-    const edges = json.data?.orders?.edges || [];
-
-    allOrders.push(...edges.map(({ node }) => normalizeOrderNode(node)));
-
-    const pageInfo = json.data?.orders?.pageInfo;
-    if (!pageInfo?.hasNextPage) break;
-    after = pageInfo.endCursor;
-  }
-
-  return allOrders;
 }
 
 export const loader = async ({ request }) => {
@@ -282,98 +97,7 @@ export const action = async ({ request }) => {
     organizationId: connection.organization_id,
   };
 
-  const logId = await startSyncLog(shop.id, {
-    entityType: "order",
-    direction: "shopify_to_zoho",
-  });
-
-  const appSettings = await getAppSettings(shop.id);
-  const orders = await fetchAllOrdersForSync(admin);
-  const [productMappings, customerMappings, orderMappings] = await Promise.all([
-    getProductMappings(shop.id),
-    getCustomerMappings(shop.id),
-    getOrderMappings(shop.id),
-  ]);
-
-  const inventoryAccountId = appSettings.accountSettings?.inventoryAccountId;
-
-  const results = [];
-  for (const order of orders) {
-    results.push(
-      await syncOrderToZoho({
-        shopId: shop.id,
-        zohoAuth,
-        order,
-        taxSettings: appSettings.taxSettings || {},
-        productMappings,
-        customerMappings,
-        orderMappings,
-        inventoryAccountId,
-      }),
-    );
-  }
-
-  const attempted = results.filter((result) => result.status !== "skipped");
-
-  await finishSyncLog(logId, {
-    recordsProcessed: attempted.length,
-    recordsSuccess: attempted.filter((result) => result.status === "success").length,
-    recordsFailed: attempted.filter((result) => result.status === "error").length,
-    metadata: attempted,
-  });
-
-  // Backfill invoices + payments for already-paid orders that don't have
-  // them yet - covers orders paid before Zoho was connected, or before the
-  // orders/paid webhook existed, since Shopify never replays past webhook
-  // events for a new subscription. Re-fetch order mappings fresh (rather
-  // than reusing the snapshot above) since the sales-order loop just above
-  // may have just created brand new ones - reusing the stale snapshot
-  // would make syncInvoiceForOrder think those orders still need a sales
-  // order and create a duplicate one.
-  const invoiceLogId = await startSyncLog(shop.id, {
-    entityType: "invoice",
-    direction: "shopify_to_zoho",
-  });
-  const paymentLogId = await startSyncLog(shop.id, {
-    entityType: "payment",
-    direction: "shopify_to_zoho",
-  });
-
-  const freshOrderMappings = await getOrderMappings(shop.id);
-  const paidOrders = orders.filter((order) => order.financialStatus === "PAID");
-
-  const invoiceResults = [];
-  const paymentResults = [];
-  for (const order of paidOrders) {
-    const { invoice, payment } = await syncInvoiceAndPaymentForOrder({
-      shopId: shop.id,
-      zohoAuth,
-      order,
-      taxSettings: appSettings.taxSettings || {},
-      accountSettings: appSettings.accountSettings || {},
-      productMappings,
-      customerMappings,
-      orderMappings: freshOrderMappings,
-    });
-    invoiceResults.push(invoice);
-    if (payment) paymentResults.push(payment);
-  }
-
-  const invoiceAttempted = invoiceResults.filter((result) => result.status !== "skipped");
-  const paymentAttempted = paymentResults.filter((result) => result.status !== "skipped");
-
-  await finishSyncLog(invoiceLogId, {
-    recordsProcessed: invoiceAttempted.length,
-    recordsSuccess: invoiceAttempted.filter((result) => result.status === "success").length,
-    recordsFailed: invoiceAttempted.filter((result) => result.status === "error").length,
-    metadata: invoiceAttempted,
-  });
-  await finishSyncLog(paymentLogId, {
-    recordsProcessed: paymentAttempted.length,
-    recordsSuccess: paymentAttempted.filter((result) => result.status === "success").length,
-    recordsFailed: paymentAttempted.filter((result) => result.status === "error").length,
-    metadata: paymentAttempted,
-  });
+  await runOrderSync({ admin, shop, zohoAuth });
 
   return null;
 };

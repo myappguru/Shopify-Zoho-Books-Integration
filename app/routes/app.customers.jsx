@@ -8,71 +8,17 @@ import {
 } from "../models/zohoConnection.server";
 import {
   getCustomerMappings,
-  syncCustomerToZoho,
+  CUSTOMERS_QUERY,
+  normalizeCustomerNode,
+  runCustomerSync,
 } from "../models/customerSync.server";
-import {
-  startSyncLog,
-  finishSyncLog,
-  getLatestSyncLog,
-} from "../models/syncLog.server";
+import { getLatestSyncLog } from "../models/syncLog.server";
 
 const PAGE_SIZE = 20;
 
 // Shopify admin resource URLs take the plain numeric id, not the GID.
 function shopifyNumericId(gid) {
   return gid ? gid.split("/").pop() : null;
-}
-
-const CUSTOMERS_QUERY = `#graphql
-  query SyncableCustomers($first: Int, $after: String, $last: Int, $before: String) {
-    customers(first: $first, after: $after, last: $last, before: $before) {
-      edges {
-        node {
-          id
-          firstName
-          lastName
-          email
-          phone
-          defaultAddress {
-            address1
-            address2
-            city
-            province
-            zip
-            country
-            phone
-          }
-        }
-      }
-      pageInfo {
-        hasNextPage
-        hasPreviousPage
-        startCursor
-        endCursor
-      }
-    }
-  }
-`;
-
-function normalizeCustomerNode(node) {
-  const address = node.defaultAddress || {};
-
-  return {
-    id: node.id,
-    firstName: node.firstName || "",
-    lastName: node.lastName || "",
-    email: node.email || "",
-    phone: node.phone || "",
-    address: {
-      address1: address.address1 || "",
-      address2: address.address2 || "",
-      city: address.city || "",
-      province: address.province || "",
-      zip: address.zip || "",
-      country: address.country || "",
-      phone: address.phone || "",
-    },
-  };
 }
 
 // One page of customers for display - cursor-based, since the Admin
@@ -97,31 +43,6 @@ async function fetchCustomersPage(admin, { after, before } = {}) {
       endCursor: null,
     },
   };
-}
-
-// The "Sync now" action has to cover the whole customer list regardless of
-// how many the page happens to be displaying - so it pages through
-// everything itself (250 at a time, the API max) rather than reusing
-// fetchCustomersPage.
-async function fetchAllCustomersForSync(admin) {
-  const allCustomers = [];
-  let after = null;
-
-  for (;;) {
-    const response = await admin.graphql(CUSTOMERS_QUERY, {
-      variables: { first: 250, after },
-    });
-    const json = await response.json();
-    const edges = json.data?.customers?.edges || [];
-
-    allCustomers.push(...edges.map(({ node }) => normalizeCustomerNode(node)));
-
-    const pageInfo = json.data?.customers?.pageInfo;
-    if (!pageInfo?.hasNextPage) break;
-    after = pageInfo.endCursor;
-  }
-
-  return allCustomers;
 }
 
 export const loader = async ({ request }) => {
@@ -174,31 +95,7 @@ export const action = async ({ request }) => {
     organizationId: connection.organization_id,
   };
 
-  const logId = await startSyncLog(shop.id, {
-    entityType: "customer",
-    direction: "shopify_to_zoho",
-  });
-
-  const customers = await fetchAllCustomersForSync(admin);
-  const mappings = await getCustomerMappings(shop.id);
-
-  const results = [];
-  for (const customer of customers) {
-    results.push(
-      await syncCustomerToZoho({ shopId: shop.id, zohoAuth, customer, mappings }),
-    );
-  }
-
-  const attempted = results.filter((result) => result.status !== "skipped");
-
-  await finishSyncLog(logId, {
-    recordsProcessed: attempted.length,
-    recordsSuccess: attempted.filter((result) => result.status === "success")
-      .length,
-    recordsFailed: attempted.filter((result) => result.status === "error")
-      .length,
-    metadata: attempted,
-  });
+  await runCustomerSync({ admin, shop, zohoAuth });
 
   return null;
 };

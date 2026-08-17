@@ -28,6 +28,7 @@ const baseMessages = {
   "dashboard.zohoBooks": "Zoho Books",
   "dashboard.notConnected": "Not Connected",
   "dashboard.zohoConnectDescription": "Connect your Zoho Books organization to start synchronizing your Shopify data.",
+  "dashboard.zohoConnectedDescriptionPrefix": "Connected to organization: ",
   "dashboard.connectZohoButton": "Connect Zoho Books",
   "dashboard.syncOverview": "Synchronization Overview",
   "dashboard.products": "Products",

@@ -12,19 +12,42 @@ import {
 } from "../models/webhookLog.server";
 
 const INVENTORY_ITEM_VARIANT_QUERY = `#graphql
-  query InventoryItemVariant($id: ID!) {
-    inventoryItem(id: $id) {
+  query InventoryItemVariant($itemId: ID!, $locationId: ID!) {
+    inventoryItem(id: $itemId) {
       id
       variants(first: 1) {
         edges {
           node {
             id
+            sku
+            title
+            product {
+              title
+            }
           }
         }
       }
     }
+    location(id: $locationId) {
+      name
+    }
   }
 `;
+
+// e.g. "Blue T-Shirt - Large (SKU BTS-L) @ Warehouse A — available: 42".
+// Falls back gracefully if the variant has no real title ("Default Title",
+// single-variant products) or a location lookup failed.
+function buildResourceLabel({ variant, locationName, available }) {
+  if (!variant) return null;
+
+  const variantSuffix =
+    variant.title && variant.title !== "Default Title" ? ` - ${variant.title}` : "";
+  const productName = `${variant.product?.title || "Unknown product"}${variantSuffix}`;
+  const skuSuffix = variant.sku ? ` (SKU ${variant.sku})` : "";
+  const locationSuffix = locationName ? ` @ ${locationName}` : "";
+
+  return `${productName}${skuSuffix}${locationSuffix} — available: ${available}`;
+}
 
 // Shopify's inventory_levels/update payload is just
 // { inventory_item_id, location_id, available } - no SKU, variant, or
@@ -77,15 +100,22 @@ export const action = async ({ request }) => {
     };
 
     const response = await admin.graphql(INVENTORY_ITEM_VARIANT_QUERY, {
-      variables: { id: inventoryItemGid },
+      variables: { itemId: inventoryItemGid, locationId: shopifyLocationId },
     });
     const json = await response.json();
-    const shopifyVariantId = json.data?.inventoryItem?.variants?.edges?.[0]?.node?.id;
+    const variant = json.data?.inventoryItem?.variants?.edges?.[0]?.node;
+    const shopifyVariantId = variant?.id;
+    const resourceLabel = buildResourceLabel({
+      variant,
+      locationName: json.data?.location?.name,
+      available: payload.available,
+    });
 
     if (!shopifyVariantId) {
       await finishWebhookLog(logId, {
         status: "skipped",
         errorMessage: "Inventory item has no associated variant",
+        resourceLabel,
       });
       return new Response();
     }
@@ -104,9 +134,23 @@ export const action = async ({ request }) => {
       warehouseMappings,
     });
 
+    // `result.status` is "success" (a Zoho adjustment was actually made),
+    // "skipped" (nothing to do - see `result.reason`), or "error". Keeping
+    // these distinct in webhook_logs (rather than collapsing success and
+    // skipped into one "processed" status) is what lets the Inventory
+    // page's activity log show what actually happened instead of just
+    // "didn't crash".
+    const statusForLog =
+      result.status === "error"
+        ? "failed"
+        : result.status === "success"
+          ? "synced"
+          : "skipped";
+
     await finishWebhookLog(logId, {
-      status: result.status === "error" ? "failed" : "processed",
-      errorMessage: result.status === "error" ? result.error : null,
+      status: statusForLog,
+      errorMessage: result.status === "error" ? result.error : result.reason || null,
+      resourceLabel,
     });
   } catch (error) {
     console.error("Failed to process inventory level webhook", error);

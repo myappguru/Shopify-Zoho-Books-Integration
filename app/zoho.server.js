@@ -184,11 +184,18 @@ export async function fetchOrganizationDetails(
   return data.organization;
 }
 
-// Zoho Inventory warehouses for the connected organization - used to map
-// against Shopify locations for (future) inventory sync. Unlike the
-// /organizations endpoints, Inventory/Books resource endpoints require
-// organization_id as a query param since one Zoho account can hold
-// multiple organizations.
+// Stock locations for the connected organization, used to map against
+// Shopify locations for inventory sync. Confirmed live (2026-08-17) that an
+// org running only Zoho Books' own native multi-location inventory feature
+// (Settings > Locations in Zoho's UI) - as opposed to a separate Zoho
+// Inventory app subscription - has an empty /inventory/v1/warehouses list
+// even though its items report real per-location stock. /books/v3/locations
+// is the endpoint that's actually populated for such orgs, and is what
+// every item's own `locations[]` array (see fetchZohoItem) is keyed
+// against - so that's used here instead, unconditionally, and remapped to
+// the warehouse_id/warehouse_name shape the rest of this app already
+// expects (this app's UI still calls these "warehouses" - renaming
+// throughout would be a bigger change than the bug warrants).
 export async function fetchWarehouses({
   accessToken,
   apiDomain,
@@ -196,7 +203,7 @@ export async function fetchWarehouses({
 }) {
   const params = new URLSearchParams({ organization_id: organizationId });
   const response = await fetch(
-    `${apiDomain}/inventory/v1/warehouses?${params.toString()}`,
+    `${apiDomain}/books/v3/locations?${params.toString()}`,
     {
       headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
     },
@@ -205,10 +212,13 @@ export async function fetchWarehouses({
   const data = await response.json();
 
   if (!response.ok || data.code !== 0) {
-    throw new ZohoApiError("Failed to fetch Zoho warehouses", data);
+    throw new ZohoApiError("Failed to fetch Zoho locations", data);
   }
 
-  return data.warehouses || [];
+  return (data.locations || []).map((location) => ({
+    warehouse_id: location.location_id,
+    warehouse_name: location.location_name,
+  }));
 }
 
 // Org-level tax list (Settings > Taxes in Zoho Books) - used as the pick
@@ -725,6 +735,95 @@ export async function fetchZohoSalesOrder(
   return data.salesorder;
 }
 
+// Creates a Package against a sales order - the Zoho Inventory record of
+// "these specific line items/quantities are boxed up and ready to ship".
+// `lineItems` is [{ soLineItemId, quantity }], matching the sales order's
+// own `line_items[].line_item_id` (not the item_id) for whichever items
+// this particular Shopify fulfillment covers - verified live against
+// Shopify.dev's raw API docs (both this and createZohoShipmentOrder below),
+// same as every other Zoho endpoint added this project: `organization_id`
+// and `salesorder_id` are query params, not body fields.
+export async function createZohoPackage(
+  { accessToken, apiDomain, organizationId },
+  { salesOrderId, date, lineItems },
+) {
+  const params = new URLSearchParams({
+    organization_id: organizationId,
+    salesorder_id: salesOrderId,
+  });
+  const body = {
+    date,
+    line_items: lineItems.map((lineItem) => ({
+      so_line_item_id: lineItem.soLineItemId,
+      quantity: lineItem.quantity,
+    })),
+  };
+
+  const response = await fetch(
+    `${apiDomain}/inventory/v1/packages?${params.toString()}`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Zoho-oauthtoken ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    },
+  );
+
+  const data = await response.json();
+
+  if (!response.ok || data.code !== 0) {
+    throw new ZohoApiError("Failed to create Zoho package", data);
+  }
+
+  return data.package;
+}
+
+// Creates a Shipment Order for one or more already-created packages -
+// Zoho's record that those packages actually shipped, with carrier/
+// tracking info. `delivery_method` and `tracking_number` are mandatory on
+// Zoho's side even though Shopify fulfillments can have either field
+// empty (e.g. a manual fulfillment with no tracking) - callers fall back
+// to a placeholder string rather than omitting them, since Zoho rejects
+// the call entirely without them.
+export async function createZohoShipmentOrder(
+  { accessToken, apiDomain, organizationId },
+  { salesOrderId, packageIds, shipmentNumber, date, deliveryMethod, trackingNumber },
+) {
+  const params = new URLSearchParams({
+    organization_id: organizationId,
+    salesorder_id: salesOrderId,
+    package_ids: packageIds.join(","),
+  });
+  const body = {
+    shipment_number: shipmentNumber,
+    date,
+    delivery_method: deliveryMethod,
+    tracking_number: trackingNumber,
+  };
+
+  const response = await fetch(
+    `${apiDomain}/inventory/v1/shipmentorders?${params.toString()}`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Zoho-oauthtoken ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    },
+  );
+
+  const data = await response.json();
+
+  if (!response.ok || data.code !== 0) {
+    throw new ZohoApiError("Failed to create Zoho shipment order", data);
+  }
+
+  return data.shipmentorder;
+}
+
 // Records a payment and applies it against one or more invoices in a
 // single call - `payment.invoices` is the { invoice_id, amount_applied }
 // pairing that both creates the payment and marks the invoice(s) as paid.
@@ -752,6 +851,115 @@ export async function createZohoCustomerPayment(
   }
 
   return data.payment;
+}
+
+// Fetches full invoice detail, including its own `customer_id` and
+// `line_items[].line_item_id` - needed to build a credit note that
+// references specific invoice line items (Zoho requires the invoice's own
+// `invoice_item_id`, not just an item_id, to credit a specific sold line).
+export async function fetchZohoInvoice(
+  { accessToken, apiDomain, organizationId },
+  invoiceId,
+) {
+  const params = new URLSearchParams({ organization_id: organizationId });
+  const response = await fetch(
+    `${apiDomain}/books/v3/invoices/${invoiceId}?${params.toString()}`,
+    {
+      headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
+    },
+  );
+
+  const data = await response.json();
+
+  if (!response.ok || data.code !== 0) {
+    throw new ZohoApiError("Failed to fetch Zoho invoice", data);
+  }
+
+  return data.invoice;
+}
+
+// Creates a Credit Note - Zoho's record of "this customer is owed money
+// back for returned/refunded items" - referencing the original invoice's
+// own line items (`line_items[].invoice_id`/`invoice_item_id`) so Zoho
+// pulls each line's price/tax from the invoice itself rather than needing
+// it repeated here. Verified live against Zoho's raw API docs: only
+// `customer_id`, `date`, and `line_items` are required; `invoice_id` (top
+// level) links the credit note to the invoice for reporting only - it does
+// NOT reduce the invoice's own balance, which is correct here since the
+// invoice was already paid in full (Section F) and should stay a clean
+// paid-in-full historical record. Money actually moves back to the
+// customer only once `createZohoCreditNoteRefund` is called against it.
+export async function createZohoCreditNote(
+  { accessToken, apiDomain, organizationId },
+  { customerId, invoiceId, date, lineItems },
+) {
+  const params = new URLSearchParams({ organization_id: organizationId });
+  const body = {
+    customer_id: customerId,
+    date,
+    line_items: lineItems.map((lineItem) => ({
+      item_id: lineItem.itemId,
+      invoice_id: invoiceId,
+      invoice_item_id: lineItem.invoiceItemId,
+      quantity: lineItem.quantity,
+    })),
+  };
+  const response = await fetch(
+    `${apiDomain}/books/v3/creditnotes?${params.toString()}`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Zoho-oauthtoken ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    },
+  );
+
+  const data = await response.json();
+
+  if (!response.ok || data.code !== 0) {
+    throw new ZohoApiError("Failed to create Zoho credit note", data);
+  }
+
+  return data.creditnote;
+}
+
+// Records the actual money movement back to the customer against an
+// already-created credit note - `fromAccountId` mirrors Section F's
+// `paymentAccountId` (the same account money was received into originally
+// now pays back out of).
+export async function createZohoCreditNoteRefund(
+  { accessToken, apiDomain, organizationId },
+  { creditNoteId, date, amount, refundMode, fromAccountId, referenceNumber },
+) {
+  const params = new URLSearchParams({ organization_id: organizationId });
+  const body = {
+    date,
+    amount,
+    refund_mode: refundMode,
+    from_account_id: fromAccountId,
+    reference_number: referenceNumber,
+  };
+  const response = await fetch(
+    `${apiDomain}/books/v3/creditnotes/${creditNoteId}/refunds?${params.toString()}`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Zoho-oauthtoken ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    },
+  );
+
+  const data = await response.json();
+
+  if (!response.ok || data.code !== 0) {
+    throw new ZohoApiError("Failed to create Zoho credit note refund", data);
+  }
+
+  return data.creditnote_refund;
 }
 
 export function getPreferredOrganizationId() {
