@@ -96,6 +96,7 @@ export default function Index() {
   const { zohoConnected, zohoOrganizationName, zohoAuthUrl, syncCounts, recentLogs } = useLoaderData();
   useZohoConnectionSync();
   const navigation = useNavigation();
+  const isRefreshing = navigation.state === "loading";
   const isSyncingAll = navigation.state === "submitting" && navigation.formData?.get("intent") === "sync-all";
   const logs = syncStats.map((stat) => ({ ...stat, log: recentLogs[stat.key], count: syncCounts[stat.key] || 0 }));
   const lastSync = logs.filter((item) => item.log).sort((a, b) => new Date(b.log.completed_at || b.log.started_at) - new Date(a.log.completed_at || a.log.started_at))[0]?.log;
@@ -176,8 +177,10 @@ export default function Index() {
         <div className="dashboard-header">
           <div><h1 className="dashboard-title">Dashboard</h1><p className="dashboard-subtitle">Overview of your Shopify &amp; Zoho Books synchronization</p></div>
           <div className="dashboard-actions">
-            <s-button icon="refresh" onClick={() => window.location.reload()}>Refresh</s-button>
-            <Form method="post"><input type="hidden" name="intent" value="sync-all" /><s-button variant="primary" icon="refresh" type="submit" loading={isSyncingAll} disabled={!zohoConnected}>Sync Now</s-button></Form>
+            <Form method="get">
+              <s-button icon="refresh" type="submit" loading={isRefreshing} disabled={isRefreshing || isSyncingAll}>Refresh</s-button>
+            </Form>
+            <Form method="post"><input type="hidden" name="intent" value="sync-all" /><s-button variant="primary" icon="refresh" type="submit" loading={isSyncingAll} disabled={!zohoConnected || isRefreshing}>Sync Now</s-button></Form>
           </div>
         </div>
 
