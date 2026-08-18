@@ -8,20 +8,46 @@ import { runInventoryPull } from "../models/inventorySync.server";
 import { getLatestSyncLog } from "../models/syncLog.server";
 import { useAutoDismiss } from "../hooks/useAutoDismiss";
 
-const INVENTORY_PRODUCTS_QUERY = `#graphql
-  query InventoryProducts {
-    products(first: 250) {
-      edges { node {
-        id title handle
-        featuredMedia { preview { image { url altText } } }
-        variants(first: 50) { edges { node {
-          id sku price inventoryQuantity
-          inventoryItem { id inventoryLevels(first: 50) { edges { node {
+const INVENTORY_VARIANTS_QUERY = `#graphql
+  query InventoryVariants($first: Int!, $locationId: ID!) {
+    productVariants(first: $first) {
+      nodes {
+        id
+        sku
+        price
+        inventoryQuantity
+        product {
+          id
+          title
+          featuredMedia { preview { image { url altText } } }
+        }
+        inventoryItem {
+          inventoryLevel(locationId: $locationId) {
             location { id name }
-            quantities(names: ["available", "incoming", "committed"]) { name quantity }
-          } } } }
-        } } }
-      } }
+            quantities(names: ["available", "incoming", "committed"]) {
+              name
+              quantity
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+const INVENTORY_VARIANTS_NO_LOCATION_QUERY = `#graphql
+  query InventoryVariantsNoLocation($first: Int!) {
+    productVariants(first: $first) {
+      nodes {
+        id
+        sku
+        price
+        inventoryQuantity
+        product {
+          id
+          title
+          featuredMedia { preview { image { url altText } } }
+        }
+      }
     }
   }
 `;
@@ -39,13 +65,11 @@ export const loader = async ({ request }) => {
   const warehouseMappings = connection ? await getWarehouseMappings(shop.id) : {};
   const latestPullLog = connection ? await getLatestSyncLog(shop.id, "inventory") : null;
 
-  const [productsResponse, locationsResponse, countResponse] = await Promise.all([
-    admin.graphql(INVENTORY_PRODUCTS_QUERY),
+  const [locationsResponse, countResponse] = await Promise.all([
     admin.graphql(LOCATIONS_QUERY),
     admin.graphql(COUNT_QUERY),
   ]);
-  const [productsJson, locationsJson, countJson] = await Promise.all([
-    productsResponse.json(),
+  const [locationsJson, countJson] = await Promise.all([
     locationsResponse.json(),
     countResponse.json(),
   ]);
@@ -61,58 +85,61 @@ export const loader = async ({ request }) => {
     totalProducts,
   };
 
-  if (productsJson.errors?.length) {
+  const locationId = locations[0]?.id || null;
+  const productsResponse = locationId
+    ? await admin.graphql(INVENTORY_VARIANTS_QUERY, { variables: { first: 250, locationId } })
+    : await admin.graphql(INVENTORY_VARIANTS_NO_LOCATION_QUERY, { variables: { first: 250 } });
+  const productsJson = await productsResponse.json();
+
+  if (locationsJson.errors?.length || countJson.errors?.length || productsJson.errors?.length) {
+    const errors = [
+      ...(locationsJson.errors || []),
+      ...(countJson.errors || []),
+      ...(productsJson.errors || []),
+    ];
     return {
       ...base,
       inventoryRows: [],
       stats: { totalInventory: 0, lowStock: 0, outOfStock: 0, inventoryValue: 0 },
-      loadError: productsJson.errors.map((error) => error.message).join(" "),
+      loadError: errors.map((error) => error.message).join(" "),
     };
   }
 
-  const products = productsJson.data?.products?.edges || [];
+  const variants = productsJson.data?.productVariants?.nodes || [];
   const inventoryRows = [];
   let totalInventory = 0;
   let lowStock = 0;
   let outOfStock = 0;
   let inventoryValue = 0;
 
-  for (const edge of products) {
-    const product = edge.node;
-    if (!product) continue;
-    const imageUrl = product.featuredMedia?.preview?.image?.url || null;
+  for (const variant of variants) {
+    if (!variant?.product) continue;
+    const level = variant.inventoryItem?.inventoryLevel || null;
+    const quantityMap = Object.fromEntries((level?.quantities || []).map((item) => [item.name, Number(item.quantity || 0)]));
+    const available = Number(variant.inventoryQuantity ?? quantityMap.available ?? 0);
+    const incoming = Number(quantityMap.incoming || 0);
+    const committed = Number(quantityMap.committed || 0);
+    const location = level?.location || locations[0] || null;
+    const mappedWarehouse = location?.id ? warehouseMappings[location.id] : null;
 
-    for (const variantEdge of product.variants?.edges || []) {
-      const variant = variantEdge.node;
-      if (!variant) continue;
-      const levels = variant.inventoryItem?.inventoryLevels?.edges?.map((item) => item.node).filter(Boolean) || [];
-      const level = levels[0];
-      const quantityMap = Object.fromEntries((level?.quantities || []).map((item) => [item.name, Number(item.quantity || 0)]));
-      const available = Number(variant.inventoryQuantity ?? quantityMap.available ?? 0);
-      const incoming = Number(quantityMap.incoming || 0);
-      const committed = Number(quantityMap.committed || 0);
-      const locationId = level?.location?.id || locations[0]?.id || null;
-      const mappedWarehouse = locationId ? warehouseMappings[locationId] : null;
+    totalInventory += available;
+    inventoryValue += available * Number(variant.price || 0);
+    if (available <= 0) outOfStock += 1;
+    else if (available <= 10) lowStock += 1;
 
-      totalInventory += available;
-      inventoryValue += available * Number(variant.price || 0);
-      if (available <= 0) outOfStock += 1;
-      else if (available <= 10) lowStock += 1;
-
-      inventoryRows.push({
-        id: variant.id,
-        title: product.title,
-        imageUrl,
-        sku: variant.sku || "—",
-        locationId,
-        locationName: level?.location?.name || "Main Location",
-        warehouseName: mappedWarehouse ? `Warehouse ${String(mappedWarehouse).slice(-4)}` : "Not mapped",
-        available,
-        incoming,
-        committed,
-        updatedAt: latestPullLog?.completed_at || latestPullLog?.started_at || null,
-      });
-    }
+    inventoryRows.push({
+      id: variant.id,
+      title: variant.product.title,
+      imageUrl: variant.product.featuredMedia?.preview?.image?.url || null,
+      sku: variant.sku || "—",
+      locationId: location?.id || null,
+      locationName: location?.name || "Main Location",
+      warehouseName: mappedWarehouse ? `Warehouse ${String(mappedWarehouse).slice(-4)}` : "Not mapped",
+      available,
+      incoming,
+      committed,
+      updatedAt: latestPullLog?.completed_at || latestPullLog?.started_at || null,
+    });
   }
 
   return {
