@@ -27,6 +27,51 @@ export function useZohoConnectionSync() {
       revalidatorRef.current.revalidate();
     }
 
+    const styleId = "zoho-settings-connection-ui-fixes";
+    let style = document.getElementById(styleId);
+    if (!style) {
+      style = document.createElement("style");
+      style.id = styleId;
+      style.textContent = `
+        /* The connection page does not use a bottom action bar. */
+        .connection-page + .content-footer {
+          display: none !important;
+        }
+
+        /* Fallback customer glyph for the current Polaris icon set. */
+        .sync-icon.purple {
+          position: relative;
+          overflow: hidden;
+        }
+        .sync-icon.purple s-icon[type="customer"] {
+          display: none;
+        }
+        .sync-icon.purple::before {
+          content: "";
+          position: absolute;
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: currentColor;
+          top: 6px;
+          left: 50%;
+          transform: translateX(-50%);
+        }
+        .sync-icon.purple::after {
+          content: "";
+          position: absolute;
+          width: 14px;
+          height: 8px;
+          border-radius: 9px 9px 4px 4px;
+          background: currentColor;
+          left: 50%;
+          bottom: 5px;
+          transform: translateX(-50%);
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
   }, []);
