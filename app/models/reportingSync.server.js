@@ -5,22 +5,10 @@ import { getInvoiceMappings } from "./invoiceSync.server";
 import { getPaymentMappings } from "./paymentSync.server";
 import { startSyncLog, finishSyncLog } from "./syncLog.server";
 
-// ZohoApiError's `.message` is just a generic label - the actual reason
-// Zoho gave lives in `.details`.
 function describeZohoError(error) {
   return error.details ? `${error.message}: ${JSON.stringify(error.details)}` : error.message;
 }
 
-// Everything below reads from `sync_logs`/`sync_mappings`, which every other
-// sync feature in this app already writes to - this is deliberately not a
-// new data source, just the first thing to actually read what's already
-// being recorded (see the comment in syncLog.server.js: "this is what the
-// (future) sync-history page will read").
-
-// One row per entity_type, summed over the trailing window - the Sales /
-// Customers / Inventory "reports" this section covers are all just this
-// query grouped differently by the page (order+invoice+payment = sales,
-// customer = customers, inventory = inventory).
 export async function getSyncActivitySummary(shopId, { days = 30 } = {}) {
   const [rows] = await db.execute(
     `SELECT entity_type,
@@ -39,32 +27,84 @@ export async function getSyncActivitySummary(shopId, { days = 30 } = {}) {
 }
 
 export async function getRecentSyncRuns(shopId, limit = 20) {
-  // mysql2's prepared statements don't reliably accept LIMIT as a bound
-  // parameter - interpolated directly instead, same as
-  // webhookLog.server.js's getRecentWebhookLogs, guarded by Number.isInteger
-  // so this never concatenates anything other than a real integer.
   const safeLimit = Number.isInteger(limit) ? limit : 20;
   const [rows] = await db.execute(
     `SELECT * FROM sync_logs WHERE shop_id = ? ORDER BY id DESC LIMIT ${safeLimit}`,
     [shopId],
   );
-
   return rows;
+}
+
+export async function getSyncHistoryStats(shopId) {
+  const [rows] = await db.execute(
+    `SELECT
+       COUNT(*) AS total,
+       SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS successful,
+       SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END) AS in_progress,
+       SUM(CASE WHEN status = 'completed_with_errors' OR status = 'failed' THEN 1 ELSE 0 END) AS failed,
+       MAX(COALESCE(completed_at, started_at)) AS last_sync_at
+     FROM sync_logs
+     WHERE shop_id = ?`,
+    [shopId],
+  );
+  return rows[0] || { total: 0, successful: 0, in_progress: 0, failed: 0, last_sync_at: null };
+}
+
+export async function getSyncHistoryPage(shopId, {
+  page = 1,
+  pageSize = 8,
+  search = "",
+  entity = "all",
+  status = "all",
+  from = "",
+  to = "",
+} = {}) {
+  const safePage = Math.max(1, Number(page) || 1);
+  const safePageSize = Math.min(50, Math.max(1, Number(pageSize) || 8));
+  const offset = (safePage - 1) * safePageSize;
+  const conditions = ["shop_id = ?"];
+  const params = [shopId];
+
+  if (search.trim()) {
+    conditions.push("(CAST(id AS CHAR) LIKE ? OR entity_type LIKE ? OR direction LIKE ? OR status LIKE ?)");
+    const q = `%${search.trim()}%`;
+    params.push(q, q, q, q);
+  }
+  if (entity !== "all") {
+    conditions.push("entity_type = ?");
+    params.push(entity);
+  }
+  if (status !== "all") {
+    const statuses = {
+      success: "completed",
+      in_progress: "running",
+      failed: "completed_with_errors",
+    };
+    conditions.push("status = ?");
+    params.push(statuses[status] || status);
+  }
+  if (from) {
+    conditions.push("started_at >= ?");
+    params.push(`${from} 00:00:00`);
+  }
+  if (to) {
+    conditions.push("started_at <= ?");
+    params.push(`${to} 23:59:59`);
+  }
+
+  const where = conditions.join(" AND ");
+  const [countRows] = await db.execute(`SELECT COUNT(*) AS total FROM sync_logs WHERE ${where}`, params);
+  const total = Number(countRows[0]?.total || 0);
+  const [rows] = await db.execute(
+    `SELECT * FROM sync_logs WHERE ${where} ORDER BY id DESC LIMIT ${safePageSize} OFFSET ${offset}`,
+    params,
+  );
+
+  return { rows, total, page: safePage, pageSize: safePageSize, totalPages: Math.max(1, Math.ceil(total / safePageSize)) };
 }
 
 const RECONCILE_EPSILON = 0.01;
 
-// Payment reconciliation: compares each paid order's Shopify total against
-// what Zoho's invoice actually shows. This is exactly the kind of check
-// that would have surfaced the real order #1001 bug (Section F) sooner -
-// a line item silently dropped during sync undercounted that invoice by
-// $49.95, and the only reason it was ever found was a manual, one-off
-// diagnostic. This makes that check a repeatable feature instead.
-// Only orders whose payment sync itself already reports "synced" are
-// checked - anything still mid-flight or already flagged as an error
-// elsewhere doesn't need a second, redundant flag here.
-// `admin` is needed for `fetchAllOrdersForSync` - Shopify's current order
-// total isn't stored anywhere in this app's own DB.
 export async function reconcilePayments({ shopId, admin, zohoAuth }) {
   const logId = await startSyncLog(shopId, {
     entityType: "reconciliation",
@@ -99,11 +139,7 @@ export async function reconcilePayments({ shopId, admin, zohoAuth }) {
         status: Math.abs(shopifyTotal - zohoTotal) > RECONCILE_EPSILON ? "mismatch" : "match",
       });
     } catch (error) {
-      results.push({
-        orderName: order.name,
-        status: "error",
-        error: describeZohoError(error),
-      });
+      results.push({ orderName: order.name, status: "error", error: describeZohoError(error) });
     }
   }
 
