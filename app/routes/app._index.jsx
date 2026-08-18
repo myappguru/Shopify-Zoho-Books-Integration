@@ -25,11 +25,24 @@ import { useZohoConnectionSync } from "../hooks/useZohoConnectionSync";
 // `iconTone` values come from s-icon's real tone enum (no "magic" - that's a
 // classic-Polaris-only tone that doesn't exist here, confirmed against the
 // actual web-component type definitions via the Shopify AI Toolkit).
+// `adminPath` is the real Shopify admin list page each tile links out to.
+// Deliberately built as a plain `https://<shop>/admin/<path>` URL, NOT the
+// `shopify://admin/<path>` deep-link scheme used elsewhere in this app
+// (e.g. the Products/Customers/Orders pages' own item-level links) - that
+// scheme is intercepted by App Bridge's own navigation handling, which
+// always navigates the top-level window regardless of `target`, confirmed
+// live (2026-08-18) when `target="_blank"` on a `shopify://` link kept
+// opening inside the embedded app instead of a new tab. A real https URL is
+// just an ordinary external link the browser handles itself - the same
+// reason `OtherApps.jsx`'s "Get app" links (a real https URL to the App
+// Store) already open in a new tab correctly. Inventory's path
+// (`products/inventory`) isn't from an official doc citation, just
+// Shopify's real admin URL structure - worth a quick manual check.
 const syncStats = [
-  { key: "products", iconType: "product", iconTone: "info" },
-  { key: "customers", iconType: "person", iconTone: "neutral" },
-  { key: "orders", iconType: "order", iconTone: "caution" },
-  { key: "inventory", iconType: "inventory", iconTone: "success" },
+  { key: "products", iconType: "product", iconTone: "info", adminPath: "products" },
+  { key: "customers", iconType: "person", iconTone: "neutral", adminPath: "customers" },
+  { key: "orders", iconType: "order", iconTone: "caution", adminPath: "orders" },
+  { key: "inventory", iconType: "inventory", iconTone: "success", adminPath: "products/inventory" },
 ];
 
 export const loader = async ({ request }) => {
@@ -64,6 +77,7 @@ export const loader = async ({ request }) => {
     : [0, 0, 0, 0, null, null, null, null];
 
   return {
+    shopDomain: session.shop,
     zohoConnected: Boolean(connection),
     zohoOrganizationName: connection?.organization_name || null,
     zohoAuthUrl: connection ? null : getAuthorizationUrl(session.shop),
@@ -125,7 +139,7 @@ function openZohoAuthWindow(zohoAuthUrl) {
 }
 
 export default function Index() {
-  const { zohoConnected, zohoOrganizationName, zohoAuthUrl, syncCounts, recentLogs } =
+  const { shopDomain, zohoConnected, zohoOrganizationName, zohoAuthUrl, syncCounts, recentLogs } =
     useLoaderData();
   const t = useTranslation();
   useZohoConnectionSync();
@@ -221,7 +235,9 @@ export default function Index() {
                 <s-stack gap="small">
                   <s-stack direction="inline" gap="small" alignItems="center">
                     <s-icon type={stat.iconType} tone={stat.iconTone}></s-icon>
-                    <s-text type="strong">{t(`dashboard.${stat.key}`)}</s-text>
+                    <s-link href={`https://${shopDomain}/admin/${stat.adminPath}`} target="_blank">
+                      <s-text type="strong">{t(`dashboard.${stat.key}`)}</s-text>
+                    </s-link>
                   </s-stack>
 
                   <s-heading>{count}</s-heading>

@@ -119,6 +119,40 @@ function formatZohoDate(isoDate) {
   return (isoDate || "").slice(0, 10) || undefined;
 }
 
+// Shopify can apply more than one tax line to a single item (e.g. India's
+// CGST+SGST split instead of one combined rate) - Zoho's line item only
+// takes a single tax_id, so a compound Shopify rate is expected to be
+// mapped to one Zoho tax (a plain tax or a Zoho "tax group" covering the
+// same combination). The key has to be stable regardless of the array's
+// order, since Shopify doesn't guarantee a fixed ordering of tax lines.
+export function buildTaxRateKey(taxLines) {
+  if (!taxLines?.length) return null;
+
+  return taxLines
+    .map((line) => `${line.title}@${Number(line.rate || 0).toFixed(4)}`)
+    .sort()
+    .join("+");
+}
+
+export function buildTaxRateLabel(taxLines) {
+  if (!taxLines?.length) return null;
+
+  return taxLines
+    .map((line) => `${line.title} (${(Number(line.rate || 0) * 100).toFixed(2)}%)`)
+    .join(" + ");
+}
+
+// Falls back to the shop's single "default tax" (Settings > Tax settings)
+// for any rate combination that hasn't been explicitly mapped yet - this is
+// what every order already did before per-rate mapping existed, so an
+// unmapped rate degrades to the old behavior instead of syncing untaxed.
+function resolveLineItemTaxId(taxLines, rateMap, defaultTaxId) {
+  const key = buildTaxRateKey(taxLines);
+  const mapped = key ? rateMap?.[key] : null;
+
+  return mapped || defaultTaxId || null;
+}
+
 function buildOrderNotes(order) {
   const parts = [];
   if (order.note) parts.push(order.note);
@@ -128,9 +162,21 @@ function buildOrderNotes(order) {
   return parts.join("\n") || undefined;
 }
 
-// `lineItems` here are already-resolved { zohoItemId, quantity, price } -
-// see resolveOrderLineItems. `taxSettings` is the shop's saved
-// { defaultTaxId, pricesIncludeTax } from the Settings page.
+// `lineItems` here are already-resolved { zohoItemId, quantity, price,
+// taxLines } - see resolveOrderLineItems. `taxSettings` is the shop's saved
+// { defaultTaxId, pricesIncludeTax, discountBeforeTax, rateMap } from the
+// Settings page - `rateMap` maps a Shopify tax-rate key (buildTaxRateKey)
+// to a specific Zoho tax_id, so different items taxed at different
+// rates/regions each get their own correct Zoho tax rather than one
+// blanket default. Zoho has no equivalent field to tax the shipping
+// charge itself (confirmed against Zoho's Sales Order/Invoice API docs -
+// shipping_charge is just a flat number with no shipping_charge_tax_id),
+// so shipping tax isn't itemized here; it rides along inside whatever
+// totalShipping already reflects. `order.shippingMethod` (the checkout-time
+// shipping rate name, e.g. "Standard Shipping") maps to the sales order's
+// own `delivery_method` field - distinct from the Shipment Order's
+// delivery_method set later in fulfillmentSync.server.js, which records the
+// actual carrier used once the order ships, not what the customer selected.
 export function buildZohoSalesOrderPayload(order, { customerId, lineItems, taxSettings }) {
   return {
     customer_id: customerId,
@@ -138,14 +184,25 @@ export function buildZohoSalesOrderPayload(order, { customerId, lineItems, taxSe
     reference_number: order.name,
     is_inclusive_tax: Boolean(taxSettings?.pricesIncludeTax),
     discount: Number(order.totalDiscount) || 0,
+    discount_type: "entity_level",
+    is_discount_before_tax: taxSettings?.discountBeforeTax !== false,
     shipping_charge: Number(order.totalShipping) || 0,
+    ...(order.shippingMethod ? { delivery_method: order.shippingMethod } : {}),
     notes: buildOrderNotes(order),
-    line_items: lineItems.map((lineItem) => ({
-      item_id: lineItem.zohoItemId,
-      quantity: lineItem.quantity,
-      rate: Number(lineItem.price) || 0,
-      ...(taxSettings?.defaultTaxId ? { tax_id: taxSettings.defaultTaxId } : {}),
-    })),
+    line_items: lineItems.map((lineItem) => {
+      const taxId = resolveLineItemTaxId(
+        lineItem.taxLines,
+        taxSettings?.rateMap,
+        taxSettings?.defaultTaxId,
+      );
+
+      return {
+        item_id: lineItem.zohoItemId,
+        quantity: lineItem.quantity,
+        rate: Number(lineItem.price) || 0,
+        ...(taxId ? { tax_id: taxId } : {}),
+      };
+    }),
   };
 }
 
@@ -180,6 +237,7 @@ async function resolveOrderLineItems({ shopId, admin, zohoAuth, order, productMa
         zohoItemId: existingZohoItemId,
         quantity: lineItem.quantity,
         price: lineItem.price,
+        taxLines: lineItem.taxLines,
       });
       continue;
     }
@@ -212,6 +270,7 @@ async function resolveOrderLineItems({ shopId, admin, zohoAuth, order, productMa
         zohoItemId: result.zohoItemId,
         quantity: lineItem.quantity,
         price: lineItem.price,
+        taxLines: lineItem.taxLines,
       });
     }
   }
@@ -302,6 +361,46 @@ export async function syncOrderToZoho({
       return { orderName: order.name, zohoSalesOrderId: existingMapping.zohoId, status: "success" };
     }
 
+    // Zoho rejects a `tax_id` on ANY line item, org-wide, if GST hasn't been
+    // enabled under that org's own Zoho Books Tax Settings (error 110942) -
+    // confirmed live (2026-08-18) to fail the *entire* update, not just the
+    // tax portion, which would otherwise mean a shop with an incomplete/
+    // stale tax rate mapping loses shipping method/discount/line-item sync
+    // too, a worse regression than before Section J existed (previously no
+    // tax_id was ever sent, so this failure mode couldn't happen at all).
+    // Retry once with every line item's tax_id stripped, so the rest of the
+    // order still syncs - this is an org-configuration gap for the
+    // merchant to fix in Zoho's own UI, not something worth hard-failing
+    // the whole sync over.
+    if (error.details?.code === 110942) {
+      const untaxedPayload = {
+        ...payload,
+        // eslint-disable-next-line no-unused-vars -- destructuring tax_id out is how it's dropped from `rest`
+        line_items: payload.line_items.map(({ tax_id, ...rest }) => rest),
+      };
+
+      try {
+        let zohoSalesOrderId = existingMapping?.zohoId;
+
+        if (zohoSalesOrderId) {
+          await updateZohoSalesOrder(zohoAuth, zohoSalesOrderId, untaxedPayload);
+        } else {
+          const created = await createZohoSalesOrder(zohoAuth, untaxedPayload);
+          zohoSalesOrderId = created.salesorder_id;
+        }
+
+        await saveOrderMapping(shopId, order.id, zohoSalesOrderId);
+
+        return { orderName: order.name, zohoSalesOrderId, status: "success" };
+      } catch (retryError) {
+        console.error("Failed to sync order to Zoho even without tax_id", order.name, retryError);
+        const description = describeZohoError(retryError);
+        await markOrderMappingError(shopId, order.id, description);
+
+        return { orderName: order.name, status: "error", error: description };
+      }
+    }
+
     console.error("Failed to sync order to Zoho", order.name, error);
     const description = describeZohoError(error);
     await markOrderMappingError(shopId, order.id, description);
@@ -374,6 +473,10 @@ export const ORDERS_QUERY = `#graphql
                     amount
                   }
                 }
+                taxLines {
+                  title
+                  rate
+                }
               }
             }
           }
@@ -386,6 +489,9 @@ export const ORDERS_QUERY = `#graphql
             shopMoney {
               amount
             }
+          }
+          shippingLine {
+            title
           }
           totalTaxSet {
             shopMoney {
@@ -455,20 +561,77 @@ export function normalizeOrderNode(node) {
       title: lineItem.title,
       quantity: lineItem.quantity,
       price: lineItem.originalUnitPriceSet?.shopMoney?.amount,
+      taxLines: (lineItem.taxLines || []).map((line) => ({
+        title: line.title,
+        rate: Number(line.rate) || 0,
+      })),
     })),
     totalDiscount: node.totalDiscountsSet?.shopMoney?.amount,
     totalShipping: node.totalShippingPriceSet?.shopMoney?.amount,
+    shippingMethod: node.shippingLine?.title || null,
     totalTax: node.totalTaxSet?.shopMoney?.amount,
     note: node.note || "",
     discountCodes: node.discountCodes || [],
   };
 }
 
+// Lightweight - only fetches what's needed to enumerate the distinct
+// Shopify tax rate(s) actually in use, for the Settings page's tax-rate
+// mapping table. Deliberately doesn't reuse the full ORDERS_QUERY (that
+// pulls customer/address/price data this doesn't need).
+const TAX_RATE_SAMPLE_QUERY = `#graphql
+  query TaxRateSample($first: Int) {
+    orders(first: $first, sortKey: CREATED_AT, reverse: true) {
+      edges {
+        node {
+          lineItems(first: 50) {
+            edges {
+              node {
+                taxLines {
+                  title
+                  rate
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+// Scans the most recent 250 orders (Shopify's max page size, one page - tax
+// rates are a store-wide configuration that doesn't change per order, so a
+// recent sample is enough to surface everything currently in use) and
+// returns the distinct tax-rate combinations found, for the Settings page's
+// mapping table.
+export async function detectShopifyTaxRates(admin) {
+  const response = await admin.graphql(TAX_RATE_SAMPLE_QUERY, {
+    variables: { first: 250 },
+  });
+  const json = await response.json();
+  const edges = json.data?.orders?.edges || [];
+
+  const seen = new Map();
+  for (const { node } of edges) {
+    for (const { node: lineItem } of node.lineItems?.edges || []) {
+      const key = buildTaxRateKey(lineItem.taxLines);
+      if (key && !seen.has(key)) {
+        seen.set(key, buildTaxRateLabel(lineItem.taxLines));
+      }
+    }
+  }
+
+  return Array.from(seen, ([key, label]) => ({ key, label }));
+}
+
 // The "Sync now"/"Sync everything" actions have to cover the whole order
 // list regardless of how many orders a page happens to be displaying - so
 // this pages through everything itself (250 at a time, the API max) rather
-// than reusing the paginated display query.
-async function fetchAllOrdersForSync(admin) {
+// than reusing the paginated display query. Exported for reuse by
+// reportingSync.server.js's payment reconciliation, which needs each
+// order's current Shopify total - nothing in this app's own DB stores that.
+export async function fetchAllOrdersForSync(admin) {
   const allOrders = [];
   let after = null;
 
@@ -665,6 +828,10 @@ export function normalizeRestOrder(payload) {
       title: lineItem.title,
       quantity: lineItem.quantity,
       price: lineItem.price,
+      taxLines: (lineItem.tax_lines || []).map((line) => ({
+        title: line.title,
+        rate: Number(line.rate) || 0,
+      })),
     })),
     totalDiscount: payload.total_discounts,
     totalShipping:
@@ -673,6 +840,7 @@ export function normalizeRestOrder(payload) {
         (sum, line) => sum + Number(line.price || 0),
         0,
       ),
+    shippingMethod: payload.shipping_lines?.[0]?.title || null,
     totalTax: payload.total_tax,
     note: payload.note || "",
     discountCodes: (payload.discount_codes || []).map((entry) => entry.code),

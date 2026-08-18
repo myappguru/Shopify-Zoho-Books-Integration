@@ -115,6 +115,7 @@ export async function syncFulfillmentToZoho({ shopId, zohoAuth, fulfillment, zoh
       salesOrderId: zohoSalesOrderId,
       date: today,
       lineItems: packageLineItems,
+      packageNumber: `PKG-${fulfillment.name.replace(/^#/, "")}`,
     });
 
     const shipment = await createZohoShipmentOrder(zohoAuth, {

@@ -743,9 +743,13 @@ export async function fetchZohoSalesOrder(
 // Shopify.dev's raw API docs (both this and createZohoShipmentOrder below),
 // same as every other Zoho endpoint added this project: `organization_id`
 // and `salesorder_id` are query params, not body fields.
+// `packageNumber` is documented as optional but confirmed live (real
+// webhook failure, 2026-08-17) to be enforced as mandatory in practice -
+// Zoho rejects the call with "It is mandatory to specify the Package
+// Number" if it's left out, despite the docs saying otherwise.
 export async function createZohoPackage(
   { accessToken, apiDomain, organizationId },
-  { salesOrderId, date, lineItems },
+  { salesOrderId, date, lineItems, packageNumber },
 ) {
   const params = new URLSearchParams({
     organization_id: organizationId,
@@ -753,6 +757,7 @@ export async function createZohoPackage(
   });
   const body = {
     date,
+    package_number: packageNumber,
     line_items: lineItems.map((lineItem) => ({
       so_line_item_id: lineItem.soLineItemId,
       quantity: lineItem.quantity,
@@ -879,19 +884,29 @@ export async function fetchZohoInvoice(
 }
 
 // Creates a Credit Note - Zoho's record of "this customer is owed money
-// back for returned/refunded items" - referencing the original invoice's
-// own line items (`line_items[].invoice_id`/`invoice_item_id`) so Zoho
-// pulls each line's price/tax from the invoice itself rather than needing
-// it repeated here. Verified live against Zoho's raw API docs: only
-// `customer_id`, `date`, and `line_items` are required; `invoice_id` (top
-// level) links the credit note to the invoice for reporting only - it does
-// NOT reduce the invoice's own balance, which is correct here since the
-// invoice was already paid in full (Section F) and should stay a clean
-// paid-in-full historical record. Money actually moves back to the
-// customer only once `createZohoCreditNoteRefund` is called against it.
+// back for returned/refunded items" - as a plain freestanding document
+// (item_id/rate/quantity), NOT linked to the invoice at creation time.
+//
+// An earlier version of this function put `invoice_id`/`invoice_item_id`
+// directly on each line item, on the assumption (from Zoho's docs) that
+// this both linked the credit note to the invoice for reporting AND pulled
+// each line's price/tax from the invoice automatically. Confirmed live
+// (real webhook failure, 2026-08-18) that this combination is rejected
+// outright by Zoho - `code: 6, "Invalid values are given for creation"` -
+// reproduced directly against the API with the exact same payload,
+// independent of this app's own code, ruling out a request-building bug.
+// Confirmed via direct trial-and-error against the live API (docs didn't
+// spell out the correct shape) that Zoho instead expects a **separate**
+// two-step flow, mirroring the same "create, then convert/apply" pattern
+// already used for sales-order→invoice (Section E) and
+// invoice→payment (Section F): create the credit note as a plain
+// standalone document first (this function - `rate` is passed explicitly
+// per line since there's no invoice link to inherit it from), then call
+// `applyZohoCreditNoteToInvoice` separately to credit it against the
+// specific invoice.
 export async function createZohoCreditNote(
   { accessToken, apiDomain, organizationId },
-  { customerId, invoiceId, date, lineItems },
+  { customerId, date, lineItems },
 ) {
   const params = new URLSearchParams({ organization_id: organizationId });
   const body = {
@@ -899,9 +914,8 @@ export async function createZohoCreditNote(
     date,
     line_items: lineItems.map((lineItem) => ({
       item_id: lineItem.itemId,
-      invoice_id: invoiceId,
-      invoice_item_id: lineItem.invoiceItemId,
       quantity: lineItem.quantity,
+      rate: lineItem.rate,
     })),
   };
   const response = await fetch(
@@ -923,6 +937,45 @@ export async function createZohoCreditNote(
   }
 
   return data.creditnote;
+}
+
+// "Credit to an invoice" - the second half of the two-step flow above.
+// Confirmed live: this is what actually links the credit note to the
+// invoice (`POST /creditnotes/{id}/invoices`), and it also reduces the
+// invoice's own balance by `amountApplied` (confirmed by re-fetching the
+// invoice after calling this in a live test - balance dropped from 749.95
+// to 0, status changed to "paid", `credits_applied` populated). That's
+// standard double-entry behavior, not data corruption: Zoho tracks
+// `payment_made` and `credits_applied` as separate fields on the invoice,
+// so a previously-paid invoice's payment history isn't erased by also
+// recording a later credit against it.
+export async function applyZohoCreditNoteToInvoice(
+  { accessToken, apiDomain, organizationId },
+  { creditNoteId, invoiceId, amountApplied },
+) {
+  const params = new URLSearchParams({ organization_id: organizationId });
+  const body = {
+    invoices: [{ invoice_id: invoiceId, amount_applied: amountApplied }],
+  };
+  const response = await fetch(
+    `${apiDomain}/books/v3/creditnotes/${creditNoteId}/invoices?${params.toString()}`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Zoho-oauthtoken ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    },
+  );
+
+  const data = await response.json();
+
+  if (!response.ok || data.code !== 0) {
+    throw new ZohoApiError("Failed to apply Zoho credit note to invoice", data);
+  }
+
+  return data;
 }
 
 // Records the actual money movement back to the customer against an

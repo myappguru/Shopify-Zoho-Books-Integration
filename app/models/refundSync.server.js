@@ -2,6 +2,7 @@ import db from "../db.server";
 import {
   fetchZohoInvoice,
   createZohoCreditNote,
+  applyZohoCreditNoteToInvoice,
   createZohoCreditNoteRefund,
 } from "../zoho.server";
 import {
@@ -67,13 +68,17 @@ export function normalizeRestRefund(payload) {
   };
 }
 
-// Creates a Zoho Credit Note for a Shopify refund - the real Zoho record of
-// "this customer is owed money/credit back", referencing the original
-// invoice's own line items so Zoho pulls each line's price/tax from there
-// rather than needing it recomputed here. Deliberately does NOT reduce the
-// invoice's own balance (the invoice stays a clean paid-in-full historical
-// record, per Section F) - money only actually moves once the credit note
-// itself is refunded.
+// Creates a Zoho Credit Note for a Shopify refund and credits it against
+// the original invoice. Two Zoho calls, not one - confirmed live
+// (2026-08-18) that Zoho rejects a credit note create call that tries to
+// link `invoice_id`/`invoice_item_id` directly on its line items (`code: 6,
+// "Invalid values are given for creation"`), and that the actually-correct
+// flow is to create the credit note as a plain standalone document (pulling
+// each line's price straight from the invoice's own line item here, since
+// there's no automatic inheritance without the link) and then separately
+// call `applyZohoCreditNoteToInvoice` ("Credit to an invoice") to credit it
+// against the specific invoice - the same create-then-convert shape already
+// used for sales-order→invoice (Section E).
 export async function syncRefundToZoho({ shopId, zohoAuth, refund, zohoInvoiceId, accountSettings }) {
   const existing = await getRefundMapping(shopId, refund.id);
   if (existing) {
@@ -103,8 +108,8 @@ export async function syncRefundToZoho({ shopId, zohoAuth, refund, zohoInvoiceId
 
       creditNoteLineItems.push({
         itemId: invoiceLineItem.item_id,
-        invoiceItemId: invoiceLineItem.line_item_id,
         quantity: lineItem.quantity,
+        rate: invoiceLineItem.rate,
       });
     }
 
@@ -116,9 +121,19 @@ export async function syncRefundToZoho({ shopId, zohoAuth, refund, zohoInvoiceId
 
     const creditNote = await createZohoCreditNote(zohoAuth, {
       customerId: invoice.customer_id,
-      invoiceId: zohoInvoiceId,
       date,
       lineItems: creditNoteLineItems,
+    });
+
+    const creditTotal = creditNoteLineItems.reduce(
+      (sum, lineItem) => sum + lineItem.quantity * (Number(lineItem.rate) || 0),
+      0,
+    );
+
+    await applyZohoCreditNoteToInvoice(zohoAuth, {
+      creditNoteId: creditNote.creditnote_id,
+      invoiceId: zohoInvoiceId,
+      amountApplied: creditTotal,
     });
 
     if (refund.amount > 0) {

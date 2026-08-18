@@ -20,6 +20,7 @@ import {
   fetchChartOfAccounts,
 } from "../zoho.server";
 import { useZohoConnectionSync } from "../hooks/useZohoConnectionSync";
+import { detectShopifyTaxRates } from "../models/orderSync.server";
 
 const LOCATIONS_QUERY = `#graphql
   query WarehouseMappingLocations {
@@ -194,6 +195,19 @@ export const loader = async ({ request }) => {
   const taxSettings = appSettings.taxSettings || {};
   const accountSettings = appSettings.accountSettings || {};
 
+  // Union of rates actually seen in the last 250 orders and any rate
+  // already mapped in a previous session - a previously-configured rate
+  // shouldn't vanish from the table just because it wasn't in this
+  // particular sample (e.g. a seasonal or region-specific rate).
+  const rateMap = taxSettings.rateMap || {};
+  const detectedRates = connection ? await detectShopifyTaxRates(admin) : [];
+  const taxRateRows = [...detectedRates];
+  for (const key of Object.keys(rateMap)) {
+    if (!taxRateRows.some((row) => row.key === key)) {
+      taxRateRows.push({ key, label: key });
+    }
+  }
+
   const locationsResponse = await admin.graphql(LOCATIONS_QUERY);
   const locationsJson = await locationsResponse.json();
 
@@ -227,6 +241,7 @@ export const loader = async ({ request }) => {
     taxes,
     taxSyncError,
     taxSettings,
+    taxRateRows,
     accounts,
     accountSyncError,
     accountSettings,
@@ -292,9 +307,30 @@ export const action = async ({ request }) => {
   if (intent === "save-tax-settings") {
     const { shop } = await getConnectionForShopDomain(session.shop);
 
+    // mergeAppSettings only shallow-merges one level deep, so it would
+    // replace `rateMap` wholesale rather than merging into it - build the
+    // full merged map here first. Only rows currently shown in the table
+    // are submitted (`taxrate:` prefixed fields); any previously-mapped
+    // rate not in this submission is left untouched rather than dropped.
+    const currentSettings = await getAppSettings(shop.id);
+    const rateMap = { ...(currentSettings.taxSettings?.rateMap || {}) };
+
+    for (const [key, value] of formData.entries()) {
+      if (!key.startsWith("taxrate:")) continue;
+
+      const rateKey = key.slice("taxrate:".length);
+      if (value) {
+        rateMap[rateKey] = value;
+      } else {
+        delete rateMap[rateKey];
+      }
+    }
+
     await mergeAppSettings(shop.id, "taxSettings", {
       defaultTaxId: formData.get("defaultTaxId") || null,
       pricesIncludeTax: formData.get("pricesIncludeTax") === "true",
+      discountBeforeTax: formData.get("discountBeforeTax") === "true",
+      rateMap,
     });
   }
 
@@ -364,11 +400,13 @@ export default function SettingsPage() {
     taxes,
     taxSyncError,
     taxSettings,
+    taxRateRows,
     accounts,
     accountSyncError,
     accountSettings,
     zohoAuthUrl,
   } = useLoaderData();
+  const rateMap = taxSettings.rateMap || {};
   const navigation = useNavigation();
   const isRefreshingZoho =
     navigation.state === "submitting" &&
@@ -732,6 +770,40 @@ export default function SettingsPage() {
                       checked={Boolean(taxSettings.pricesIncludeTax)}
                       label="Shopify prices already include tax"
                     ></s-checkbox>
+
+                    <s-checkbox
+                      name="discountBeforeTax"
+                      value="true"
+                      checked={taxSettings.discountBeforeTax !== false}
+                      label="Order-level discount is applied before tax"
+                    ></s-checkbox>
+
+                    {taxRateRows.length > 0 && (
+                      <s-stack gap="small">
+                        <s-paragraph color="subdued">
+                          Map each Shopify tax rate found on recent orders to
+                          the matching Zoho tax (or tax group for a compound
+                          rate like CGST + SGST). Anything left unmapped
+                          falls back to the default tax above.
+                        </s-paragraph>
+
+                        {taxRateRows.map((row) => (
+                          <s-select
+                            key={row.key}
+                            name={`taxrate:${row.key}`}
+                            label={row.label}
+                            placeholder="Use default tax"
+                            value={rateMap[row.key] || ""}
+                          >
+                            {taxes.map((tax) => (
+                              <s-option key={tax.tax_id} value={tax.tax_id}>
+                                {tax.tax_name} ({tax.tax_percentage}%)
+                              </s-option>
+                            ))}
+                          </s-select>
+                        ))}
+                      </s-stack>
+                    )}
 
                     <s-button variant="primary" type="submit">
                       Save tax settings

@@ -7,7 +7,7 @@ const baseMessages = {
   "app.nav.customers": "Customers",
   "app.nav.orders": "Orders",
   "app.nav.inventory": "Inventory",
-  "app.nav.syncHistory": "Sync History",
+  "app.nav.syncHistory": "Reporting",
   "app.nav.settings": "Settings",
   "app.nav.helpSupport": "Help & Support",
   "helpSupport.title": "Help & Support",
