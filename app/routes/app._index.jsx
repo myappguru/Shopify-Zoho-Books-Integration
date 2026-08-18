@@ -104,7 +104,7 @@ export default function Index() {
   return (
     <s-page heading="Dashboard" inlineSize="large">
       <style>{`
-        .dashboard { width:100%; max-width:none; display:flex; flex-direction:column; gap:12px; padding:0 0 20px; box-sizing:border-box; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:#202223; }
+        .dashboard { width:80%; max-width:none; margin:0 auto; display:flex; flex-direction:column; gap:12px; padding:0 0 20px; box-sizing:border-box; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:#202223; }
         .dashboard-header { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; padding:2px 0; }
         .dashboard-title { font-size:20px; line-height:26px; font-weight:650; margin:0; letter-spacing:-.01em; color:#202223; }
         .dashboard-subtitle { margin:2px 0 0; color:#616161; font-size:15px; line-height:21px; }
@@ -168,7 +168,7 @@ export default function Index() {
         .history-footer a { color:#0066ff; font-size:13px; line-height:18px; font-weight:600; text-decoration:none; }
         .empty-state { padding:22px 16px; color:#6d7175; font-size:13px; line-height:18px; text-align:center; }
         .last-sync { color:#6d7175; font-size:13px; line-height:18px; }
-        @media (max-width:900px) { .kpi-grid,.two-column { grid-template-columns:1fr 1fr; } .connection-card { grid-template-columns:1fr; } .connection-center { order:2; } .connection-side.right { justify-content:flex-start; } .connection-right { text-align:left; } }
+        @media (max-width:900px) { .dashboard { width:100%; } .kpi-grid,.two-column { grid-template-columns:1fr 1fr; } .connection-card { grid-template-columns:1fr; } .connection-center { order:2; } .connection-side.right { justify-content:flex-start; } .connection-right { text-align:left; } }
         @media (max-width:620px) { .kpi-grid,.two-column { grid-template-columns:1fr; } .dashboard-header { flex-direction:column; } .sync-row { grid-template-columns:110px 1fr 38px; } .progress-count { display:none; } .activity-row { grid-template-columns:22px 1fr auto; } .activity-time { display:none; } .history-table { min-width:620px; } .panel { overflow-x:auto; } }
       `}</style>
 
