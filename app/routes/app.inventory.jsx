@@ -30,10 +30,12 @@ const INVENTORY_PRODUCTS_QUERY = `#graphql
   }
 `;
 const LOCATIONS_QUERY = `#graphql
-  query InventoryLocations { locations(first: 100, includeInactive: false) { nodes { id name } }
+  query InventoryLocations {
+    locations(first: 100, includeInactive: false) { nodes { id name } }
+  }
 `;
 const PRODUCT_COUNT_QUERY = `#graphql
-  query InventoryProductCount { productsCount { count }
+  query InventoryProductCount { productsCount { count } }
 `;
 
 export const loader = async ({ request }) => {
@@ -43,14 +45,15 @@ export const loader = async ({ request }) => {
   const page = Math.max(1, Number(url.searchParams.get("page") || 1));
   const after = url.searchParams.get("after") || null;
   const before = url.searchParams.get("before") || null;
+  const lastPage = url.searchParams.get("last") === "1";
   const appSettings = connection ? await getAppSettings(shop.id) : {};
   const warehouseMappings = connection ? await getWarehouseMappings(shop.id) : {};
   const recentActivity = connection ? await getRecentWebhookLogs(shop.id, "INVENTORY_LEVELS_UPDATE", 10) : [];
   const latestPullLog = connection ? await getLatestSyncLog(shop.id, "inventory") : null;
 
-  const productVariables = before
-    ? { last: PAGE_SIZE, before }
-    : { first: PAGE_SIZE, after: after || null };
+  const productVariables = lastPage || before
+    ? { last: PAGE_SIZE, before: before || null }
+    : { first: PAGE_SIZE, after };
 
   const [productsResponse, locationsResponse, countResponse] = await Promise.all([
     admin.graphql(INVENTORY_PRODUCTS_QUERY, { variables: productVariables }),
@@ -61,51 +64,31 @@ export const loader = async ({ request }) => {
     productsResponse.json(), locationsResponse.json(), countResponse.json(),
   ]);
 
-  const productsConnection = productsJson.data?.products || {};
-  const products = (productsConnection.edges || []).map(({ node }) => normalizeProductNode(node));
+  const connectionData = productsJson.data?.products || {};
+  const products = (connectionData.edges || []).map(({ node }) => normalizeProductNode(node));
   const locations = locationsJson.data?.locations?.nodes || [];
   const totalProducts = Number(countJson.data?.productsCount?.count || 0);
-  const pageInfo = productsConnection.pageInfo || {};
-
+  const pageInfo = connectionData.pageInfo || {};
   const inventoryRows = [];
-  let totalInventory = 0;
-  let lowStock = 0;
-  let outOfStock = 0;
-  let inventoryValue = 0;
+  let totalInventory = 0, lowStock = 0, outOfStock = 0, inventoryValue = 0;
 
   for (const product of products) {
     for (const variant of product.variants || []) {
-      const levels = variant.inventoryItem?.inventoryLevels?.edges || [];
-      const firstLevel = levels[0]?.node;
-      const quantities = Object.fromEntries((firstLevel?.quantities || []).map((q) => [q.name, Number(q.quantity || 0)]));
-      const available = Number(variant.inventoryQuantity || quantities.available || 0);
+      const level = variant.inventoryItem?.inventoryLevels?.edges?.[0]?.node;
+      const quantities = Object.fromEntries((level?.quantities || []).map((q) => [q.name, Number(q.quantity || 0)]));
+      const available = Number(variant.inventoryQuantity ?? quantities.available ?? 0);
       const incoming = Number(quantities.incoming || 0);
       const committed = Number(quantities.committed || 0);
-      const locationId = firstLevel?.location?.id || locations[0]?.id || null;
-      const zohoWarehouseId = locationId ? warehouseMappings[locationId] : null;
+      const locationId = level?.location?.id || locations[0]?.id || null;
+      const warehouseId = locationId ? warehouseMappings[locationId] : null;
       totalInventory += available;
       inventoryValue += available * Number(variant.price || 0);
-      if (available <= 0) outOfStock += 1;
-      else if (available <= 10) lowStock += 1;
-      inventoryRows.push({
-        id: variant.id, productId: product.id, title: product.title, imageUrl: product.imageUrl,
-        sku: variant.sku || "—", locationId,
-        locationName: firstLevel?.location?.name || "Main Location",
-        warehouseName: zohoWarehouseId ? `Warehouse ${String(zohoWarehouseId).slice(-4)}` : "Not mapped",
-        available, incoming, committed,
-        updatedAt: latestPullLog?.completed_at || latestPullLog?.started_at || null,
-      });
+      if (available <= 0) outOfStock += 1; else if (available <= 10) lowStock += 1;
+      inventoryRows.push({ id: variant.id, title: product.title, imageUrl: product.imageUrl, sku: variant.sku || "—", locationId, locationName: level?.location?.name || "Main Location", warehouseName: warehouseId ? `Warehouse ${String(warehouseId).slice(-4)}` : "Not mapped", available, incoming, committed, updatedAt: latestPullLog?.completed_at || latestPullLog?.started_at || null });
     }
   }
 
-  return {
-    connected: Boolean(connection),
-    inventoryAccountId: appSettings.accountSettings?.inventoryAccountId || null,
-    warehouseMappingCount: Object.keys(warehouseMappings).length,
-    recentActivity, latestPullLog, products, inventoryRows, locations, totalProducts,
-    stats: { totalInventory, lowStock, outOfStock, inventoryValue },
-    pagination: { page, totalPages: Math.max(1, Math.ceil(totalProducts / PAGE_SIZE)), ...pageInfo },
-  };
+  return { connected: Boolean(connection), inventoryAccountId: appSettings.accountSettings?.inventoryAccountId || null, warehouseMappingCount: Object.keys(warehouseMappings).length, recentActivity, latestPullLog, inventoryRows, locations, totalProducts, stats: { totalInventory, lowStock, outOfStock, inventoryValue }, pagination: { page, totalPages: Math.max(1, Math.ceil(totalProducts / PAGE_SIZE)), ...pageInfo } };
 };
 
 export const action = async ({ request }) => {
@@ -114,76 +97,54 @@ export const action = async ({ request }) => {
   if (formData.get("intent") !== "pull-from-zoho") return null;
   const { shop, connection } = await getConnectionForShopDomain(session.shop);
   if (!connection) return null;
-  const token = await getValidAccessToken(shop.id).catch((error) => {
-    console.error("Failed to get a valid Zoho access token for inventory pull", error);
-    return null;
-  });
+  const token = await getValidAccessToken(shop.id).catch((error) => { console.error("Failed to get a valid Zoho access token for inventory pull", error); return null; });
   if (!token) return null;
   await runInventoryPull({ admin, shop, zohoAuth: { accessToken: token.accessToken, apiDomain: token.apiDomain, organizationId: connection.organization_id } });
   return null;
 };
 
-function formatNumber(value) { return new Intl.NumberFormat().format(Number(value || 0)); }
-function formatCurrency(value) { return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(value || 0)); }
-function formatDate(value) { return value ? new Date(value).toLocaleString([], { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"; }
-function formatRelative(value) { if (!value) return "Never"; const diff = Math.max(0, Date.now() - new Date(value).getTime()); const minutes = Math.floor(diff / 60000); if (minutes < 1) return "Just now"; if (minutes < 60) return `${minutes} min ago`; const hours = Math.floor(minutes / 60); if (hours < 24) return `${hours} hr ago`; return `${Math.floor(hours / 24)} days ago`; }
-function getStatus(quantity) { if (quantity <= 0) return { label: "Out of Stock", className: "out" }; if (quantity <= 10) return { label: "Low Stock", className: "low" }; return { label: "In Stock", className: "in" }; }
+function number(value) { return new Intl.NumberFormat().format(Number(value || 0)); }
+function currency(value) { return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", minimumFractionDigits: 2 }).format(Number(value || 0)); }
+function date(value) { return value ? new Date(value).toLocaleString([], { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"; }
+function status(value) { return value <= 0 ? { label: "Out of Stock", key: "out" } : value <= 10 ? { label: "Low Stock", key: "low" } : { label: "In Stock", key: "in" }; }
 function Icon({ type, tone }) { return <s-icon type={type} tone={tone}></s-icon>; }
-// eslint-disable-next-line react/prop-types
-function StatCard({ label, value, caption, icon, className }) { return <div className="inventory-stat-card"><div className="inventory-stat-top"><div className="inventory-stat-label">{label}</div><div className={`inventory-stat-icon ${className}`}><Icon type={icon} /></div></div><div className="inventory-stat-value">{value}</div><div className="inventory-stat-caption">{caption}</div></div>; }
+function href(page, options = {}) { const p = new URLSearchParams(); if (page > 1) p.set("page", String(page)); if (options.after) p.set("after", options.after); if (options.before) p.set("before", options.before); if (options.last) p.set("last", "1"); return p.toString() ? `?${p.toString()}` : ""; }
 
-function pageUrl(page, { after = null, before = null } = {}) {
-  const params = new URLSearchParams();
-  if (page > 1) params.set("page", String(page));
-  if (after) params.set("after", after);
-  if (before) params.set("before", before);
-  const query = params.toString();
-  return query ? `?${query}` : "";
-}
+// eslint-disable-next-line react/prop-types
+function Stat({ label, value, caption, icon, tone }) { return <div className="inv-stat"><div className="inv-stat-head"><span>{label}</span><span className={`inv-stat-icon ${tone}`}><Icon type={icon} /></span></div><strong>{value}</strong><small>{caption}</small></div>; }
 
 export default function InventoryPage() {
   const data = useLoaderData();
   const navigation = useNavigation();
   const [search, setSearch] = useState("");
-  const [locationFilter, setLocationFilter] = useState("all");
-  const [warehouseFilter, setWarehouseFilter] = useState("all");
+  const [location, setLocation] = useState("all");
+  const [warehouse, setWarehouse] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [activeTab, setActiveTab] = useState("product");
+  const [tab, setTab] = useState("product");
+  const showLog = useAutoDismiss(data.latestPullLog?.id);
   const isPulling = navigation.state === "submitting" && navigation.formData?.get("intent") === "pull-from-zoho";
-  const showPullLog = useAutoDismiss(data.latestPullLog?.id);
   const isLive = data.connected && data.inventoryAccountId && data.warehouseMappingCount > 0;
   const { page, totalPages, hasNextPage, hasPreviousPage, startCursor, endCursor } = data.pagination;
-
-  const filteredRows = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return data.inventoryRows.filter((row) => {
-      const matchesSearch = !query || [row.title, row.sku, row.locationName, row.warehouseName].join(" ").toLowerCase().includes(query);
-      const matchesLocation = locationFilter === "all" || row.locationId === locationFilter;
-      const matchesWarehouse = warehouseFilter === "all" || row.warehouseName === warehouseFilter;
-      const status = getStatus(row.available).className;
-      const matchesStatus = statusFilter === "all" || status === statusFilter;
-      return matchesSearch && matchesLocation && matchesWarehouse && matchesStatus;
-    });
-  }, [data.inventoryRows, search, locationFilter, warehouseFilter, statusFilter]);
-
-  const warehouseOptions = [...new Set(data.inventoryRows.map((row) => row.warehouseName))];
-  const lastUpdated = data.latestPullLog?.completed_at || data.latestPullLog?.started_at;
-  const from = data.inventoryRows.length ? (page - 1) * PAGE_SIZE + 1 : 0;
-  const to = data.inventoryRows.length ? from + Math.min(filteredRows.length, PAGE_SIZE) - 1 : 0;
-  const nextUrl = hasNextPage ? pageUrl(page + 1, { after: endCursor }) : "";
-  const previousUrl = hasPreviousPage ? (page === 2 ? "" : pageUrl(page - 1, { before: startCursor })) : "";
+  const rows = useMemo(() => data.inventoryRows.filter((row) => {
+    const q = search.trim().toLowerCase();
+    const s = status(row.available).key;
+    return (!q || `${row.title} ${row.sku} ${row.locationName} ${row.warehouseName}`.toLowerCase().includes(q)) && (location === "all" || row.locationId === location) && (warehouse === "all" || row.warehouseName === warehouse) && (statusFilter === "all" || s === statusFilter);
+  }), [data.inventoryRows, search, location, warehouse, statusFilter]);
+  const warehouses = [...new Set(data.inventoryRows.map((r) => r.warehouseName))];
+  const prevHref = hasPreviousPage ? (page === 2 ? href(1) : href(page - 1, { before: startCursor })) : "";
+  const nextHref = hasNextPage ? href(page + 1, { after: endCursor }) : "";
+  const lastHref = totalPages > 1 && page !== totalPages ? href(totalPages, { last: true }) : "";
+  const from = rows.length ? (page - 1) * PAGE_SIZE + 1 : 0;
+  const to = rows.length ? from + rows.length - 1 : 0;
 
   return <s-page heading="Inventory" inlineSize="large"><style>{`
-    .inventory-shell{width:100%;max-width:1260px;margin:0 auto;padding:0 0 24px;box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#17233c}.inventory-header{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:28px}.inventory-title{margin:0;font-size:30px;line-height:36px;font-weight:700;color:#101828}.inventory-subtitle{margin:6px 0 0;font-size:15px;line-height:22px;color:#344563}.inventory-header-actions{display:flex;align-items:center;gap:12px}.connection-badge{height:42px;padding:0 14px;border-radius:9px;background:#eaf8f0;color:#0a8f55;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600}.connection-dot{width:7px;height:7px;border-radius:50%;background:#0aa65c}.header-icon-button{width:46px;height:46px;border:1px solid #d8e0ed;border-radius:9px;background:#fff;display:grid;place-items:center}.store-selector{height:46px;min-width:244px;padding:0 14px;border:1px solid #d8e0ed;border-radius:9px;background:#fff;display:flex;align-items:center;justify-content:space-between;color:#17233c;font-size:13px;font-weight:600}.store-selector-left{display:flex;align-items:center;gap:10px}.inventory-stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:24px}.inventory-stat-card{min-height:148px;padding:20px;border:1px solid #e3e8f0;border-radius:11px;background:#fff;box-shadow:0 1px 3px rgba(20,35,60,.04)}.inventory-stat-top{display:flex;align-items:center;justify-content:space-between}.inventory-stat-label{font-size:13px;color:#344563}.inventory-stat-icon{width:48px;height:48px;border-radius:12px;display:grid;place-items:center}.inventory-stat-icon.blue{background:#edf5ff}.inventory-stat-icon.green{background:#e9f8f0}.inventory-stat-icon.orange{background:#fff5e9}.inventory-stat-icon.red{background:#fff0f1}.inventory-stat-icon.purple{background:#f4ecff}.inventory-stat-value{margin-top:7px;font-size:26px;font-weight:700;color:#101828}.inventory-stat-caption{margin-top:8px;font-size:12px;color:#344563}.inventory-banner{margin-bottom:18px}.inventory-table-card{border:1px solid #e1e7f0;border-radius:11px;background:#fff;overflow:hidden}.inventory-toolbar{padding:18px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #e7ebf1}.inventory-search{height:42px;flex:1;border:1px solid #d4dce8;border-radius:8px;display:flex;align-items:center;gap:8px;padding:0 12px}.inventory-search input{border:0;outline:0;width:100%;font-size:13px}.inventory-select{height:42px;min-width:135px;border:1px solid #d4dce8;border-radius:8px;background:#fff;padding:0 11px}.inventory-filter-button,.inventory-export{height:42px;border:1px solid #d4dce8;border-radius:8px;background:#fff;padding:0 13px;display:flex;align-items:center;gap:7px}.inventory-export{margin-left:auto}.inventory-tabs{height:48px;display:flex;align-items:flex-end;border-bottom:1px solid #e7ebf1;padding:0 18px}.inventory-tab{height:48px;padding:0 18px;border:0;border-bottom:2px solid transparent;background:transparent;color:#344563;cursor:pointer}.inventory-tab.active{color:#1264ed;border-bottom-color:#1264ed;font-weight:600}.inventory-table-wrap{overflow-x:auto}.inventory-table{width:100%;min-width:1080px;border-collapse:collapse}.inventory-table th{padding:12px;text-align:left;background:#f8fafc;border-bottom:1px solid #e5eaf1;font-size:11px}.inventory-table td{padding:12px;border-bottom:1px solid #e9edf3;font-size:12px}.inventory-product{display:flex;align-items:center;gap:12px}.inventory-product-image{width:46px;height:46px;border:1px solid #e2e7ee;border-radius:8px;object-fit:cover;background:#f6f8fb}.inventory-product-name{font-weight:650;white-space:nowrap}.inventory-qty{font-weight:650}.inventory-qty.in{color:#08a15b}.inventory-qty.low{color:#e87d00}.inventory-qty.out{color:#e53935}.inventory-status{display:inline-flex;padding:4px 8px;border-radius:7px;font-size:10px;font-weight:600}.inventory-status.in{background:#e8f8ef;color:#0a9857}.inventory-status.low{background:#fff3e4;color:#e27b00}.inventory-status.out{background:#fff0f0;color:#df3838}.inventory-footer{min-height:58px;padding:0 18px;display:flex;align-items:center;justify-content:space-between;border-top:1px solid #e7ebf1}.inventory-pagination{display:flex;align-items:center;gap:8px}.inventory-page-button{min-width:36px;height:36px;border:1px solid #d6deea;border-radius:7px;background:#fff;display:grid;place-items:center;text-decoration:none;color:#17233c}.inventory-page-button.active{border-color:#2672ff;color:#1264ed;background:#f7faff}.inventory-page-button.disabled{opacity:.45;pointer-events:none}.inventory-empty{padding:44px;text-align:center;color:#738099}.inventory-pull-note{margin-top:5px;font-size:11px;color:#738099}@media(max-width:1100px){.inventory-stats{grid-template-columns:repeat(3,1fr)}.inventory-toolbar{flex-wrap:wrap}.inventory-search{flex-basis:100%}}@media(max-width:760px){.inventory-header{flex-direction:column}.inventory-header-actions{width:100%;flex-wrap:wrap}.inventory-stats{grid-template-columns:repeat(2,1fr)}.inventory-footer{flex-direction:column;align-items:flex-start;gap:10px;padding:12px 16px}.inventory-pagination{width:100%;overflow:auto}}@media(max-width:480px){.inventory-stats{grid-template-columns:1fr}.store-selector{min-width:0;flex:1}}
-  `}</style><div className="inventory-shell">
-    <div className="inventory-header"><div><h1 className="inventory-title">Inventory</h1><p className="inventory-subtitle">View and manage your inventory across Shopify locations and Zoho Books warehouses.</p></div><div className="inventory-header-actions"><div className="connection-badge"><span className="connection-dot" />{data.connected ? "Connected" : "Not connected"}</div><Form method="get"><button className="header-icon-button" type="submit" title="Refresh"><Icon type="refresh" /></button></Form><div className="store-selector"><div className="store-selector-left"><Icon type="store" /><span>My Shopify Store</span></div><Icon type="chevron-down" /></div></div></div>
-    <div className="inventory-stats"><StatCard label="Total Products" value={formatNumber(data.totalProducts)} caption="All products" icon="product" className="blue" /><StatCard label="Total Inventory" value={formatNumber(data.stats.totalInventory)} caption="Across loaded locations" icon="inventory" className="green" /><StatCard label="Low Stock" value={formatNumber(data.stats.lowStock)} caption="Below threshold" icon="alert-triangle" className="orange" /><StatCard label="Out of Stock" value={formatNumber(data.stats.outOfStock)} caption="Out of stock" icon="x-circle" className="red" /><StatCard label="Inventory Value" value={formatCurrency(data.stats.inventoryValue)} caption="Estimated value" icon="money" className="purple" /></div>
-    {!isLive && <div className="inventory-banner"><s-banner heading={!data.connected ? "Connect Zoho to enable inventory synchronization" : !data.inventoryAccountId ? "Inventory account setup is required" : "Warehouse mapping required"} tone="warning">Configure the Zoho connection, inventory account and warehouse mapping from Settings.</s-banner></div>}
-    {showPullLog && data.latestPullLog && <div className="inventory-banner"><s-banner heading="Inventory sync completed" tone={data.latestPullLog.records_failed > 0 ? "warning" : "success"}>{data.latestPullLog.records_processed} processed, {data.latestPullLog.records_success} updated, {data.latestPullLog.records_failed} failed.</s-banner></div>}
-    <div className="inventory-table-card"><div className="inventory-toolbar"><label className="inventory-search"><Icon type="search" /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by product name, SKU or handle..." /></label><select className="inventory-select" value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)}><option value="all">All Locations</option>{data.locations.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}</select><select className="inventory-select" value={warehouseFilter} onChange={(e) => setWarehouseFilter(e.target.value)}><option value="all">All Warehouses</option>{warehouseOptions.map((warehouse) => <option key={warehouse} value={warehouse}>{warehouse}</option>)}</select><button className="inventory-filter-button" type="button" onClick={() => setStatusFilter(statusFilter === "all" ? "in" : "all")}><Icon type="filter" />Filters{statusFilter !== "all" ? " · 1" : ""}</button><Form method="post" className="inventory-export"><input type="hidden" name="intent" value="pull-from-zoho" /><button type="submit" disabled={!isLive || isPulling} style={{border:0,background:"transparent",display:"flex",alignItems:"center",gap:7,color:"inherit",font:"inherit"}}><Icon type="download" />{isPulling ? "Syncing" : "Export"}</button></Form></div>
-      <div className="inventory-tabs"><button className={`inventory-tab ${activeTab === "product" ? "active" : ""}`} onClick={() => setActiveTab("product")} type="button">Inventory by Product</button><button className={`inventory-tab ${activeTab === "location" ? "active" : ""}`} onClick={() => setActiveTab("location")} type="button">Inventory by Location</button><button className={`inventory-tab ${activeTab === "warehouse" ? "active" : ""}`} onClick={() => setActiveTab("warehouse")} type="button">Inventory by Warehouse</button></div>
-      {activeTab === "product" ? <div className="inventory-table-wrap"><table className="inventory-table"><thead><tr><th>Product</th><th>SKU</th><th>Shopify Location</th><th>Zoho Warehouse</th><th>Available Qty</th><th>Incoming Qty</th><th>Committed Qty</th><th>Status</th><th>Last Updated</th><th></th></tr></thead><tbody>{filteredRows.map((row) => { const status = getStatus(row.available); return <tr key={row.id}><td><div className="inventory-product">{row.imageUrl ? <img className="inventory-product-image" src={row.imageUrl} alt="" /> : <div className="inventory-product-image" />}<div><div className="inventory-product-name">{row.title}</div></div></div></td><td>{row.sku}</td><td>{row.locationName}</td><td>{row.warehouseName}</td><td><span className={`inventory-qty ${status.className}`}>{formatNumber(row.available)}</span></td><td>{formatNumber(row.incoming)}</td><td>{formatNumber(row.committed)}</td><td><span className={`inventory-status ${status.className}`}>{status.label}</span></td><td>{formatDate(row.updatedAt)}</td><td>⋮</td></tr>; })}</tbody></table>{filteredRows.length === 0 && <div className="inventory-empty">No inventory items match your current filters.</div>}</div> : <div className="inventory-empty">{activeTab === "location" ? "Location-level inventory view is ready for the next data layer." : "Warehouse-level inventory view is ready for the next data layer."}</div>}
-      <div className="inventory-footer"><div>Showing {from} to {to} of {formatNumber(data.totalProducts)} products{lastUpdated && <div className="inventory-pull-note">Last Zoho sync: {formatRelative(lastUpdated)}</div>}</div><div className="inventory-pagination"><a className={`inventory-page-button ${!hasPreviousPage ? "disabled" : ""}`} href={previousUrl}>‹</a><a className="inventory-page-button active" href={page === 1 ? "" : pageUrl(page, { after: page > 1 ? null : null })}>{page}</a>{hasNextPage && <a className="inventory-page-button" href={nextUrl}>{page + 1}</a>}{page < totalPages - 1 && <span>…</span>}{totalPages > 1 && <span className="inventory-page-button disabled">{totalPages}</span>}<a className={`inventory-page-button ${!hasNextPage ? "disabled" : ""}`} href={nextUrl}>›</a></div></div>
-    </div>
-  </div></s-page>;
+    .inventory{max-width:1260px;margin:auto;padding-bottom:24px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#17233c}.head{display:flex;justify-content:space-between;gap:18px;margin-bottom:28px}.title{margin:0;font-size:30px;line-height:36px;font-weight:700;color:#101828}.sub{margin:6px 0 0;font-size:15px;color:#344563}.actions{display:flex;gap:12px;align-items:center}.connected{padding:12px 14px;border-radius:9px;background:#eaf8f0;color:#0a8f55;font-size:13px;font-weight:600}.refresh,.store{height:46px;border:1px solid #d8e0ed;border-radius:9px;background:#fff}.refresh{width:46px}.store{min-width:244px;padding:0 14px}.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:24px}.inv-stat{min-height:148px;padding:20px;border:1px solid #e3e8f0;border-radius:11px;background:#fff}.inv-stat-head{display:flex;justify-content:space-between;align-items:center;color:#344563;font-size:13px}.inv-stat-icon{width:48px;height:48px;border-radius:12px;display:grid;place-items:center}.blue{background:#edf5ff}.green{background:#e9f8f0}.orange{background:#fff5e9}.red{background:#fff0f1}.purple{background:#f4ecff}.inv-stat strong{display:block;margin-top:7px;font-size:26px;color:#101828}.inv-stat small{display:block;margin-top:8px;color:#344563}.card{border:1px solid #e1e7f0;border-radius:11px;background:#fff;overflow:hidden}.toolbar{padding:18px;display:flex;gap:12px;border-bottom:1px solid #e7ebf1}.search{flex:1;height:42px;border:1px solid #d4dce8;border-radius:8px;display:flex;align-items:center;gap:8px;padding:0 12px}.search input{border:0;outline:0;width:100%}.select,.filter,.export{height:42px;border:1px solid #d4dce8;border-radius:8px;background:#fff;padding:0 12px}.export{margin-left:auto}.tabs{display:flex;height:48px;border-bottom:1px solid #e7ebf1}.tab{padding:0 18px;border:0;background:#fff;border-bottom:2px solid transparent}.tab.active{color:#1264ed;border-bottom-color:#1264ed;font-weight:600}.table-wrap{overflow:auto}.table{width:100%;min-width:1080px;border-collapse:collapse}.table th,.table td{padding:12px;border-bottom:1px solid #e9edf3;text-align:left;font-size:12px}.table th{background:#f8fafc;font-size:11px}.product{display:flex;gap:12px;align-items:center}.image{width:46px;height:46px;border:1px solid #e2e7ee;border-radius:8px;object-fit:cover}.qty{font-weight:650}.qty.in{color:#08a15b}.qty.low{color:#e87d00}.qty.out{color:#e53935}.badge{padding:4px 8px;border-radius:7px;font-size:10px;font-weight:600}.badge.in{background:#e8f8ef;color:#0a9857}.badge.low{background:#fff3e4;color:#e27b00}.badge.out{background:#fff0f0;color:#df3838}.footer{min-height:58px;padding:0 18px;display:flex;justify-content:space-between;align-items:center;border-top:1px solid #e7ebf1}.pagination{display:flex;gap:8px;align-items:center}.page-btn{min-width:36px;height:36px;border:1px solid #d6deea;border-radius:7px;background:#fff;display:grid;place-items:center;text-decoration:none;color:#17233c}.page-btn.active{border-color:#2672ff;color:#1264ed;background:#f7faff}.page-btn.disabled{opacity:.4;pointer-events:none}.empty{padding:40px;text-align:center;color:#738099}@media(max-width:1100px){.stats{grid-template-columns:repeat(3,1fr)}.toolbar{flex-wrap:wrap}.search{flex-basis:100%}}@media(max-width:760px){.head{flex-direction:column}.actions{flex-wrap:wrap}.stats{grid-template-columns:repeat(2,1fr)}.footer{flex-direction:column;align-items:flex-start;gap:10px;padding:12px}.pagination{overflow:auto;width:100%}}@media(max-width:480px){.stats{grid-template-columns:1fr}}
+  `}</style><div className="inventory"><div className="head"><div><h1 className="title">Inventory</h1><p className="sub">View and manage your inventory across Shopify locations and Zoho Books warehouses.</p></div><div className="actions"><span className="connected">● {data.connected ? "Connected" : "Not connected"}</span><Form method="get"><button className="refresh" title="Refresh"><Icon type="refresh" /></button></Form><button className="store">My Shopify Store⌄</button></div></div>
+  <div className="stats"><Stat label="Total Products" value={number(data.totalProducts)} caption="All products" icon="product" tone="blue" /><Stat label="Total Inventory" value={number(data.stats.totalInventory)} caption="Across loaded locations" icon="inventory" tone="green" /><Stat label="Low Stock" value={number(data.stats.lowStock)} caption="Below threshold" icon="alert-triangle" tone="orange" /><Stat label="Out of Stock" value={number(data.stats.outOfStock)} caption="Out of stock" icon="x-circle" tone="red" /><Stat label="Inventory Value" value={currency(data.stats.inventoryValue)} caption="Estimated value" icon="money" tone="purple" /></div>
+  {!isLive && <s-banner tone="warning">Configure the Zoho connection, inventory account and warehouse mapping from Settings.</s-banner>}
+  {showLog && data.latestPullLog && <s-banner tone="success">{data.latestPullLog.records_processed} processed, {data.latestPullLog.records_success} updated, {data.latestPullLog.records_failed} failed.</s-banner>}
+  <div className="card"><div className="toolbar"><label className="search"><Icon type="search" /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by product name, SKU or handle..." /></label><select className="select" value={location} onChange={(e) => setLocation(e.target.value)}><option value="all">All Locations</option>{data.locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select><select className="select" value={warehouse} onChange={(e) => setWarehouse(e.target.value)}><option value="all">All Warehouses</option>{warehouses.map((w) => <option key={w}>{w}</option>)}</select><button className="filter" onClick={() => setStatusFilter(statusFilter === "all" ? "in" : "all")}><Icon type="filter" /> Filters</button><Form method="post" className="export"><input type="hidden" name="intent" value="pull-from-zoho" /><button disabled={!isLive || isPulling}><Icon type="download" /> {isPulling ? "Syncing" : "Export"}</button></Form></div>
+  <div className="tabs"><button className={`tab ${tab === "product" ? "active" : ""}`} onClick={() => setTab("product")}>Inventory by Product</button><button className={`tab ${tab === "location" ? "active" : ""}`} onClick={() => setTab("location")}>Inventory by Location</button><button className={`tab ${tab === "warehouse" ? "active" : ""}`} onClick={() => setTab("warehouse")}>Inventory by Warehouse</button></div>
+  {tab === "product" ? <div className="table-wrap"><table className="table"><thead><tr><th>Product</th><th>SKU</th><th>Shopify Location</th><th>Zoho Warehouse</th><th>Available Qty</th><th>Incoming Qty</th><th>Committed Qty</th><th>Status</th><th>Last Updated</th><th></th></tr></thead><tbody>{rows.map((row) => { const s = status(row.available); return <tr key={row.id}><td><div className="product">{row.imageUrl ? <img className="image" src={row.imageUrl} alt="" /> : <div className="image" />}<strong>{row.title}</strong></div></td><td>{row.sku}</td><td>{row.locationName}</td><td>{row.warehouseName}</td><td><span className={`qty ${s.key}`}>{number(row.available)}</span></td><td>{number(row.incoming)}</td><td>{number(row.committed)}</td><td><span className={`badge ${s.key}`}>{s.label}</span></td><td>{date(row.updatedAt)}</td><td>⋮</td></tr>; })}</tbody></table>{rows.length === 0 && <div className="empty">No inventory items match your current filters.</div>}</div> : <div className="empty">{tab === "location" ? "Location-level inventory view is ready for the next data layer." : "Warehouse-level inventory view is ready for the next data layer."}</div>}
+  <div className="footer"><div>Showing {from} to {to} of {number(data.totalProducts)} products</div><div className="pagination"><a className={`page-btn ${!hasPreviousPage ? "disabled" : ""}`} href={prevHref}>‹</a><a className="page-btn active" href={page === 1 ? "" : (before ? `?page=${page}` : "")}>{page}</a>{hasNextPage && <a className="page-btn" href={nextHref}>{page + 1}</a>}{page < totalPages - 1 && <span>…</span>}{totalPages > 1 && <a className="page-btn" href={lastHref}>{totalPages}</a>}<a className={`page-btn ${!hasNextPage ? "disabled" : ""}`} href={nextHref}>›</a></div></div></div></div></s-page>;
 }
