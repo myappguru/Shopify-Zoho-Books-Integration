@@ -1,10 +1,7 @@
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { Form, useLoaderData, useNavigation } from "react-router";
 import { authenticate } from "../shopify.server";
-import {
-  getConnectionForShopDomain,
-  getValidAccessToken,
-} from "../models/zohoConnection.server";
+import { getConnectionForShopDomain, getValidAccessToken } from "../models/zohoConnection.server";
 import { getAuthorizationUrl } from "../zoho.server";
 import { getSyncedProductCount, runProductSync } from "../models/productSync.server";
 import { getSyncedCustomerCount, runCustomerSync } from "../models/customerSync.server";
@@ -21,27 +18,16 @@ const syncStats = [
   { key: "inventory", iconType: "inventory", iconTone: "success", adminPath: "products/inventory" },
 ];
 
-const labels = {
-  products: "Products",
-  customers: "Customers",
-  orders: "Orders",
-  inventory: "Inventory",
-};
+const labels = { products: "Products", customers: "Customers", orders: "Orders", inventory: "Inventory" };
 
 export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
   const { shop, connection } = await getConnectionForShopDomain(session.shop);
-
   const [productCount, customerCount, orderCount, inventoryCount, productLog, customerLog, orderLog, inventoryLog] = connection
     ? await Promise.all([
-        getSyncedProductCount(shop.id),
-        getSyncedCustomerCount(shop.id),
-        getSyncedOrderCount(shop.id),
-        getSyncedWebhookCount(shop.id, "INVENTORY_LEVELS_UPDATE"),
-        getLatestSyncLog(shop.id, "product"),
-        getLatestSyncLog(shop.id, "customer"),
-        getLatestSyncLog(shop.id, "order"),
-        getLatestSyncLog(shop.id, "inventory"),
+        getSyncedProductCount(shop.id), getSyncedCustomerCount(shop.id), getSyncedOrderCount(shop.id),
+        getSyncedWebhookCount(shop.id, "INVENTORY_LEVELS_UPDATE"), getLatestSyncLog(shop.id, "product"),
+        getLatestSyncLog(shop.id, "customer"), getLatestSyncLog(shop.id, "order"), getLatestSyncLog(shop.id, "inventory"),
       ])
     : [0, 0, 0, 0, null, null, null, null];
 
@@ -59,48 +45,33 @@ export const action = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
   const formData = await request.formData();
   if (formData.get("intent") !== "sync-all") return null;
-
   const { shop, connection } = await getConnectionForShopDomain(session.shop);
   if (!connection) return null;
-
   const token = await getValidAccessToken(shop.id).catch((error) => {
     console.error("Failed to get a valid Zoho access token for sync-all", error);
     return null;
   });
   if (!token) return null;
-
-  const zohoAuth = {
-    accessToken: token.accessToken,
-    apiDomain: token.apiDomain,
-    organizationId: connection.organization_id,
-  };
-
+  const zohoAuth = { accessToken: token.accessToken, apiDomain: token.apiDomain, organizationId: connection.organization_id };
   await runProductSync({ admin, shop, zohoAuth });
   await runCustomerSync({ admin, shop, zohoAuth });
   await runOrderSync({ admin, shop, zohoAuth });
   await runInventoryPull({ admin, shop, zohoAuth });
-
   return null;
 };
 
 function openZohoAuthWindow(zohoAuthUrl) {
   window.open(zohoAuthUrl, "zoho-connect", "width=600,height=720");
 }
-
-function formatCount(value) {
-  return new Intl.NumberFormat().format(value || 0);
-}
-
+function formatCount(value) { return new Intl.NumberFormat().format(value || 0); }
 function formatDate(value) {
   if (!value) return "—";
   return new Date(value).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 }
-
 function getSuccessRate(log) {
   if (!log?.records_processed) return null;
   return Math.round(((log.records_success || 0) / log.records_processed) * 100);
 }
-
 function getRelativeTime(value) {
   if (!value) return "No sync yet";
   const diff = Math.max(0, Date.now() - new Date(value).getTime());
@@ -189,110 +160,40 @@ export default function Index() {
           </div>
           <div className="dashboard-actions">
             <s-button icon="refresh" onClick={() => window.location.reload()}>Refresh</s-button>
-            <Form method="post">
-              <input type="hidden" name="intent" value="sync-all" />
-              <s-button variant="primary" icon="refresh" type="submit" loading={isSyncingAll} disabled={!zohoConnected}>Sync Now</s-button>
-            </Form>
+            <Form method="post"><input type="hidden" name="intent" value="sync-all" /><s-button variant="primary" icon="refresh" type="submit" loading={isSyncingAll} disabled={!zohoConnected}>Sync Now</s-button></Form>
           </div>
         </div>
 
         <div className="kpi-grid">
-          {logs.map((item) => (
-            <div className="kpi-card" key={item.key}>
-              <div className="kpi-top">
-                <span className="kpi-label">{labels[item.key]}{item.key === "inventory" ? " Items" : ""}</span>
-                <span className="kpi-icon"><s-icon type={item.iconType} tone={item.iconTone}></s-icon></span>
-              </div>
-              <div className="kpi-number">{formatCount(item.count)}</div>
-              <div className="kpi-meta">
-                {item.log ? <span className="success-text">Synced</span> : <span>Not synced yet</span>}
-                <span>•</span>
-                <span>{getRelativeTime(item.log?.completed_at || item.log?.started_at)}</span>
-              </div>
-            </div>
-          ))}
+          {logs.map((item) => <div className="kpi-card" key={item.key}>
+            <div className="kpi-top"><span className="kpi-label">{labels[item.key]}{item.key === "inventory" ? " Items" : ""}</span><span className="kpi-icon"><s-icon type={item.iconType} tone={item.iconTone}></s-icon></span></div>
+            <div className="kpi-number">{formatCount(item.count)}</div>
+            <div className="kpi-meta">{item.log ? <span className="success-text">Synced</span> : <span>Not synced yet</span>}<span>•</span><span>{getRelativeTime(item.log?.completed_at || item.log?.started_at)}</span></div>
+          </div>)}
         </div>
 
         <div className="connection-card">
-          <div className="connection-side">
-            <div className="connection-logo"><s-icon type="shopify" tone="success"></s-icon></div>
-            <div><div className="connection-name">Shopify</div><div className="connection-caption">Store connected and ready to sync</div></div>
-          </div>
-          <div className="connection-center">
-            <span className="connected-pill"><span className="connected-dot"></span>{zohoConnected ? "Connected" : "Zoho not connected"}</span>
-            <div className="connection-line"></div>
-          </div>
-          <div className="connection-side" style={{ justifyContent: "flex-end" }}>
-            <div className="connection-right">
-              <strong>{zohoConnected ? "Zoho Books" : "Connect Zoho Books"}</strong>
-              <span>{zohoConnected ? (zohoOrganizationName || "Organization connected") : "Authorize your Zoho organization to enable sync"}</span>
-              {!zohoConnected && <div style={{ marginTop: 8 }}><s-button variant="primary" onClick={() => openZohoAuthWindow(zohoAuthUrl)}>Connect</s-button></div>}
-            </div>
-            <div className="connection-logo"><s-icon type="link" tone={zohoConnected ? "success" : "caution"}></s-icon></div>
-          </div>
+          <div className="connection-side"><div className="connection-logo"><s-icon type="store" tone="success"></s-icon></div><div><div className="connection-name">Shopify</div><div className="connection-caption">Store connected and ready to sync</div></div></div>
+          <div className="connection-center"><span className="connected-pill"><span className="connected-dot"></span>{zohoConnected ? "Connected" : "Zoho not connected"}</span><div className="connection-line"></div></div>
+          <div className="connection-side" style={{ justifyContent: "flex-end" }}><div className="connection-right"><strong>{zohoConnected ? "Zoho Books" : "Connect Zoho Books"}</strong><span>{zohoConnected ? (zohoOrganizationName || "Organization connected") : "Authorize your Zoho organization to enable sync"}</span>{!zohoConnected && <div style={{ marginTop: 8 }}><s-button variant="primary" onClick={() => openZohoAuthWindow(zohoAuthUrl)}>Connect</s-button></div>}</div><div className="connection-logo"><s-icon type="link" tone={zohoConnected ? "success" : "caution"}></s-icon></div></div>
         </div>
 
         <div className="two-column">
-          <div className="panel">
-            <div className="panel-header">
-              <h2 className="panel-title">Sync Overview</h2>
-              <p className="panel-subtitle">Latest synchronization success by data type</p>
-            </div>
-            {logs.map((item) => {
-              const rate = getSuccessRate(item.log) ?? (item.count > 0 ? 100 : 0);
-              return (
-                <div className="sync-row" key={item.key}>
-                  <div className="sync-label"><span className="sync-dot"></span>{labels[item.key]}</div>
-                  <div className="progress-track"><div className="progress-fill" style={{ width: `${rate}%` }}></div></div>
-                  <div className="progress-value">{rate}%</div>
-                  <div className="progress-count">{formatCount(item.count)} synced</div>
-                </div>
-              );
-            })}
+          <div className="panel"><div className="panel-header"><h2 className="panel-title">Sync Overview</h2><p className="panel-subtitle">Latest synchronization success by data type</p></div>
+            {logs.map((item) => { const rate = getSuccessRate(item.log) ?? (item.count > 0 ? 100 : 0); return <div className="sync-row" key={item.key}><div className="sync-label"><span className="sync-dot"></span>{labels[item.key]}</div><div className="progress-track"><div className="progress-fill" style={{ width: `${rate}%` }}></div></div><div className="progress-value">{rate}%</div><div className="progress-count">{formatCount(item.count)} synced</div></div>; })}
             <div className="history-footer"><a href="/app/sync-history">View detailed sync history →</a></div>
           </div>
 
-          <div className="panel">
-            <div className="panel-header">
-              <h2 className="panel-title">Recent Activity</h2>
-              <p className="panel-subtitle">Latest synchronization activities</p>
-            </div>
-            <div className="activity-list">
-              {hasActivity ? logs.filter((item) => item.log).map((item) => {
-                const failed = Number(item.log.records_failed || 0) > 0;
-                return (
-                  <div className="activity-row" key={item.key}>
-                    <span className="activity-icon">{failed ? "!" : "✓"}</span>
-                    <div><div className="activity-title">{labels[item.key]} sync {failed ? "partially completed" : "completed"}</div><div className="activity-meta">{formatCount(item.log.records_processed)} records processed · {formatCount(item.log.records_success)} succeeded</div></div>
-                    <span className={`status-pill ${failed ? "status-partial" : ""}`}>{failed ? "Partial" : "Success"}</span>
-                    <span className="activity-time">{formatDate(item.log.completed_at || item.log.started_at)}</span>
-                  </div>
-                );
-              }) : <div className="empty-state">No synchronization activity yet.</div>}
-            </div>
+          <div className="panel"><div className="panel-header"><h2 className="panel-title">Recent Activity</h2><p className="panel-subtitle">Latest synchronization activities</p></div>
+            <div className="activity-list">{hasActivity ? logs.filter((item) => item.log).map((item) => { const failed = Number(item.log.records_failed || 0) > 0; return <div className="activity-row" key={item.key}><span className="activity-icon">{failed ? "!" : "✓"}</span><div><div className="activity-title">{labels[item.key]} sync {failed ? "partially completed" : "completed"}</div><div className="activity-meta">{formatCount(item.log.records_processed)} records processed · {formatCount(item.log.records_success)} succeeded</div></div><span className={`status-pill ${failed ? "status-partial" : ""}`}>{failed ? "Partial" : "Success"}</span><span className="activity-time">{formatDate(item.log.completed_at || item.log.started_at)}</span></div>; }) : <div className="empty-state">No synchronization activity yet.</div>}</div>
             <div className="history-footer"><a href="/app/sync-history">View all activities →</a></div>
           </div>
         </div>
 
-        <div className="panel">
-          <div className="panel-header">
-            <h2 className="panel-title">Recent Sync History</h2>
-            <p className="panel-subtitle">Summary of recent synchronization operations</p>
-          </div>
-          {hasActivity ? (
-            <table className="history-table">
-              <thead><tr><th>Type</th><th>Records</th><th>Status</th><th>Date &amp; Time</th><th>Duration</th></tr></thead>
-              <tbody>
-                {logs.filter((item) => item.log).map((item) => {
-                  const failed = Number(item.log.records_failed || 0) > 0;
-                  const started = item.log.started_at ? new Date(item.log.started_at) : null;
-                  const completed = item.log.completed_at ? new Date(item.log.completed_at) : null;
-                  const duration = started && completed ? Math.max(0, Math.round((completed - started) / 1000)) : null;
-                  return <tr key={item.key}><td><span className="history-type"><s-icon type={item.iconType} tone={item.iconTone}></s-icon>{labels[item.key]}</span></td><td>{formatCount(item.log.records_processed)}</td><td><span className={`status-pill ${failed ? "status-partial" : ""}`}>{failed ? "Partial" : "Success"}</span></td><td>{formatDate(item.log.completed_at || item.log.started_at)}</td><td>{duration == null ? "—" : `${String(Math.floor(duration / 60)).padStart(2, "0")}:${String(duration % 60).padStart(2, "0")`}</td></tr>;
-                })}
-              </tbody>
-            </table>
-          ) : <div className="empty-state">Your recent sync operations will appear here.</div>}
+        <div className="panel"><div className="panel-header"><h2 className="panel-title">Recent Sync History</h2><p className="panel-subtitle">Summary of recent synchronization operations</p></div>
+          {hasActivity ? <table className="history-table"><thead><tr><th>Type</th><th>Records</th><th>Status</th><th>Date &amp; Time</th><th>Duration</th></tr></thead><tbody>
+            {logs.filter((item) => item.log).map((item) => { const failed = Number(item.log.records_failed || 0) > 0; const started = item.log.started_at ? new Date(item.log.started_at) : null; const completed = item.log.completed_at ? new Date(item.log.completed_at) : null; const duration = started && completed ? Math.max(0, Math.round((completed - started) / 1000)) : null; const durationLabel = duration == null ? "—" : `${String(Math.floor(duration / 60)).padStart(2, "0")}:${String(duration % 60).padStart(2, "0")}`; return <tr key={item.key}><td><span className="history-type"><s-icon type={item.iconType} tone={item.iconTone}></s-icon>{labels[item.key]}</span></td><td>{formatCount(item.log.records_processed)}</td><td><span className={`status-pill ${failed ? "status-partial" : ""}`}>{failed ? "Partial" : "Success"}</span></td><td>{formatDate(item.log.completed_at || item.log.started_at)}</td><td>{durationLabel}</td></tr>; })}
+          </tbody></table> : <div className="empty-state">Your recent sync operations will appear here.</div>}
           <div className="history-footer"><a href="/app/sync-history">View full sync history →</a></div>
         </div>
 
