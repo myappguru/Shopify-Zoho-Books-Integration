@@ -24,15 +24,15 @@ export const loader = async ({ request }) => {
   const { shop, connection } = await getConnectionForShopDomain(session.shop);
   const [productCount, customerCount, orderCount, inventoryCount, productLog, customerLog, orderLog, inventoryLog] = connection
     ? await Promise.all([
-        getSyncedProductCount(shop.id),
-        getSyncedCustomerCount(shop.id),
-        getSyncedOrderCount(shop.id),
-        getSyncedWebhookCount(shop.id, "INVENTORY_LEVELS_UPDATE"),
-        getLatestSyncLog(shop.id, "product"),
-        getLatestSyncLog(shop.id, "customer"),
-        getLatestSyncLog(shop.id, "order"),
-        getLatestSyncLog(shop.id, "inventory"),
-      ])
+      getSyncedProductCount(shop.id),
+      getSyncedCustomerCount(shop.id),
+      getSyncedOrderCount(shop.id),
+      getSyncedWebhookCount(shop.id, "INVENTORY_LEVELS_UPDATE"),
+      getLatestSyncLog(shop.id, "product"),
+      getLatestSyncLog(shop.id, "customer"),
+      getLatestSyncLog(shop.id, "order"),
+      getLatestSyncLog(shop.id, "inventory"),
+    ])
     : [0, 0, 0, 0, null, null, null, null];
 
   return {
@@ -143,7 +143,7 @@ export default function Index() {
         .panel-title { margin:0; font-size:14px; line-height:19px; font-weight:650; color:#202223; }
         .panel-subtitle { margin:1px 0 0; color:#6d7175; font-size:13px; line-height:18px; }
         .sync-row { display:grid; grid-template-columns:145px minmax(90px,1fr) 38px 68px; align-items:center; gap:10px; padding:8px 16px; }
-        .sync-label { display:flex; align-items:center; gap:7px; font-size:11px; line-height:16px; font-weight:600; }
+        .sync-label { display:flex; align-items:center; gap:7px; font-size:12px; line-height:16px; font-weight:600; }
         .sync-label s-icon { width:15px; height:15px; }
         .sync-dot { width:6px; height:6px; border-radius:50%; background:#00a47c; flex:0 0 6px; }
         .progress-track { height:5px; background:#e9edf1; border-radius:999px; overflow:hidden; }
@@ -160,7 +160,7 @@ export default function Index() {
         .activity-time { font-size:9px; line-height:14px; color:#6d7175; white-space:nowrap; }
         .history-table { width:100%; border-collapse:collapse; table-layout:fixed; }
         .history-table th { text-align:left; padding:8px 16px; background:#f6f7f8; color:#6d7175; font-size:9px; line-height:14px; font-weight:650; text-transform:uppercase; letter-spacing:.035em; }
-        .history-table td { padding:8px 16px; border-top:1px solid #edf0f2; font-size:10px; line-height:15px; color:#303030; vertical-align:middle; }
+        .history-table td { padding:8px 16px; border-top:1px solid #edf0f2; font-size:13px; line-height:15px; color:#303030; vertical-align:middle; }
         .history-type { display:flex; align-items:center; gap:7px; font-weight:600; color:#202223; }
         .history-type s-icon { width:15px; height:15px; }
         .details-link { color:#0066ff; font-size:13px; line-height:18px; text-decoration:none; font-weight:550; }
@@ -188,12 +188,12 @@ export default function Index() {
         <div className="connection-card">
           <div className="connection-side"><div className="connection-logo"><s-icon type="store" tone="success"></s-icon></div><div><div className="connection-name">Shopify</div><div className="connection-caption">Store connected and ready to sync</div></div></div>
           <div className="connection-center"><span className="connection-line"></span><span className="connected-pill"><span className="connected-dot"></span>{zohoConnected ? "Connected" : "Zoho not connected"}</span><span className="connection-line"></span></div>
-          <div className="connection-side right"><div className="connection-right"><strong>{zohoConnected ? "Zoho Books" : "Connect Zoho Books"}</strong><span>{zohoConnected ? (zohoOrganizationName || "Organization connected") : "Authorize your Zoho organization to enable sync"}</span>{!zohoConnected && <div style={{ marginTop:6 }}><s-button variant="primary" onClick={() => openZohoAuthWindow(zohoAuthUrl)}>Connect</s-button></div>}</div><div className="connection-logo zoho"><s-icon type="link" tone={zohoConnected ? "info" : "caution"}></s-icon></div></div>
+          <div className="connection-side right"><div className="connection-right"><strong>{zohoConnected ? "Zoho Books" : "Connect Zoho Books"}</strong><span>{zohoConnected ? (zohoOrganizationName || "Organization connected") : "Authorize your Zoho organization to enable sync"}</span>{!zohoConnected && <div style={{ marginTop: 6 }}><s-button variant="primary" onClick={() => openZohoAuthWindow(zohoAuthUrl)}>Connect</s-button></div>}</div><div className="connection-logo zoho"><s-icon type="link" tone={zohoConnected ? "info" : "caution"}></s-icon></div></div>
         </div>
 
         <div className="two-column">
           <div className="panel"><div className="panel-header"><h2 className="panel-title">Sync Overview</h2><p className="panel-subtitle">Latest synchronization success by data type</p></div>
-            {logs.map((item) => { const rate = getSuccessRate(item.log) ?? (item.count > 0 ? 100 : 0); return <div className="sync-row" key={item.key}><div className="sync-label"><span className="sync-dot"></span><s-icon type={item.iconType} tone={item.tone}></s-icon>{item.label.replace(" Items", "")}</div><div className="progress-track"><div className="progress-fill" style={{ width:`${rate}%` }}></div></div><div className="progress-value">{rate}%</div><div className="progress-count">{formatCount(item.count)} synced</div></div>; })}
+            {logs.map((item) => { const rate = getSuccessRate(item.log) ?? (item.count > 0 ? 100 : 0); return <div className="sync-row" key={item.key}><div className="sync-label"><span className="sync-dot"></span><s-icon type={item.iconType} tone={item.tone}></s-icon>{item.label.replace(" Items", "")}</div><div className="progress-track"><div className="progress-fill" style={{ width: `${rate}%` }}></div></div><div className="progress-value">{rate}%</div><div className="progress-count">{formatCount(item.count)} synced</div></div>; })}
             <div className="history-footer"><a href="/app/sync-history">View detailed sync history →</a></div>
           </div>
 
