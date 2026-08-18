@@ -15,9 +15,7 @@ const isFresh = (value) => Boolean(value) && Date.now() - new Date(value).getTim
 
 async function loadOrganizationSettings(shop, token, connection, { force = false } = {}) {
   const cached = await getAppSettings(shop.id);
-  if (!force && isFresh(cached.organization?.fetchedAt)) {
-    return { ...cached.organization, organizationId: cached.organization.organizationId || connection.organization_id || null, organizationName: cached.organization.organizationName || connection.organization_name || null };
-  }
+  if (!force && isFresh(cached.organization?.fetchedAt)) return { ...cached.organization, organizationId: cached.organization.organizationId || connection.organization_id || null, organizationName: cached.organization.organizationName || connection.organization_name || null };
   try {
     if (!token) throw new Error("No valid Zoho access token");
     const org = await fetchOrganizationDetails(connection.organization_id, { accessToken: token.accessToken, apiDomain: token.apiDomain });
@@ -71,6 +69,7 @@ export const loader = async ({ request }) => {
   const appSettings = await getAppSettings(shop.id);
   const taxSettings = appSettings.taxSettings || {};
   const accountSettings = appSettings.accountSettings || {};
+  const syncPreferences = appSettings.syncPreferences || { products: true, orders: true, customers: true };
   const rateMap = taxSettings.rateMap || {};
   const detectedRates = connection ? await detectShopifyTaxRates(admin) : [];
   const taxRateRows = [...detectedRates];
@@ -79,21 +78,12 @@ export const loader = async ({ request }) => {
   const locationsJson = await locationsResponse.json();
   const locations = (locationsJson.data?.locations?.edges || []).map(({ node }) => node);
   return {
-    connection: connection ? {
-      organizationId: connection.organization_id,
-      organizationName: connection.organization_name,
-      dataCenter: connection.data_center,
-      connectedAt: connection.connected_at,
-      tokenExpiresAt: connection.access_token_expires_at,
-      tokenMasked: token?.accessToken ? `zoho${"•".repeat(28)}${token.accessToken.slice(-4)}` : "zoho••••••••••••••••••••••••••••••••",
-      connectedBy: connection.connected_by || "Zoho Books account",
-      scope: connection.scope || null,
-    } : null,
-    organization, locations, locationsError: Boolean(locationsJson.errors) && locations.length === 0,
+    connection: connection ? { organizationId: connection.organization_id, organizationName: connection.organization_name, dataCenter: connection.data_center, connectedAt: connection.connected_at, tokenExpiresAt: connection.access_token_expires_at, tokenMasked: token?.accessToken ? `zoho${"•".repeat(28)}${token.accessToken.slice(-4)}` : "zoho••••••••••••••••••••••••••••••••", connectedBy: connection.connected_by || "Zoho Books account", scope: connection.scope || null } : null,
+    organization, syncPreferences, locations, locationsError: Boolean(locationsJson.errors) && locations.length === 0,
     warehouses: warehousesResult.items, warehouseMappings, warehouseSyncError: warehousesResult.error,
     taxes: taxesResult.items, taxSyncError: taxesResult.error, taxSettings, taxRateRows,
-    accounts: accountsResult.items, accountSyncError: accountsResult.error, accountSettings,
-    zohoAuthUrl: connection ? getAuthorizationUrl(session.shop) : getAuthorizationUrl(session.shop),
+    accounts: accountsResult.items, accountSyncError: accountsResult.error,
+    accountSettings, zohoAuthUrl: getAuthorizationUrl(session.shop),
   };
 };
 
@@ -110,24 +100,16 @@ export const action = async ({ request }) => {
     await loadZohoList(shop, "taxes", token, () => fetchTaxes({ accessToken: token.accessToken, apiDomain: token.apiDomain, organizationId: connection.organization_id }), { force: true });
     await loadZohoList(shop, "accounts", token, () => fetchChartOfAccounts({ accessToken: token.accessToken, apiDomain: token.apiDomain, organizationId: connection.organization_id }), { force: true });
   }
-  if (intent === "test-connection" && connection) {
-    await getValidAccessToken(shop.id);
+  if (intent === "test-connection" && connection) await getValidAccessToken(shop.id);
+  if (intent === "save-sync-preferences") {
+    await mergeAppSettings(shop.id, "syncPreferences", { products: formData.get("productsEnabled") === "true", orders: formData.get("ordersEnabled") === "true", customers: formData.get("customersEnabled") === "true" });
   }
   if (intent === "save-warehouse-mapping") {
-    for (const [key, value] of formData.entries()) {
-      if (!key.startsWith("warehouse:")) continue;
-      const locationId = key.slice("warehouse:".length);
-      if (value) await saveWarehouseMapping(shop.id, locationId, value); else await removeWarehouseMapping(shop.id, locationId);
-    }
+    for (const [key, value] of formData.entries()) { if (!key.startsWith("warehouse:")) continue; const locationId = key.slice("warehouse:".length); if (value) await saveWarehouseMapping(shop.id, locationId, value); else await removeWarehouseMapping(shop.id, locationId); }
   }
   if (intent === "save-tax-settings") {
-    const currentSettings = await getAppSettings(shop.id);
-    const rateMap = { ...(currentSettings.taxSettings?.rateMap || {}) };
-    for (const [key, value] of formData.entries()) {
-      if (!key.startsWith("taxrate:")) continue;
-      const rateKey = key.slice("taxrate:".length);
-      if (value) rateMap[rateKey] = value; else delete rateMap[rateKey];
-    }
+    const currentSettings = await getAppSettings(shop.id); const rateMap = { ...(currentSettings.taxSettings?.rateMap || {}) };
+    for (const [key, value] of formData.entries()) { if (!key.startsWith("taxrate:")) continue; const rateKey = key.slice("taxrate:".length); if (value) rateMap[rateKey] = value; else delete rateMap[rateKey]; }
     await mergeAppSettings(shop.id, "taxSettings", { defaultTaxId: formData.get("defaultTaxId") || null, pricesIncludeTax: formData.get("pricesIncludeTax") === "true", discountBeforeTax: formData.get("discountBeforeTax") === "true", rateMap });
   }
   if (intent === "save-account-settings") await mergeAppSettings(shop.id, "accountSettings", { salesAccountId: formData.get("salesAccountId") || null, paymentAccountId: formData.get("paymentAccountId") || null, inventoryAccountId: formData.get("inventoryAccountId") || null });
