@@ -15,11 +15,29 @@ const isFresh = (value) => Boolean(value) && Date.now() - new Date(value).getTim
 
 async function loadOrganizationSettings(shop, token, connection, { force = false } = {}) {
   const cached = await getAppSettings(shop.id);
-  if (!force && isFresh(cached.organization?.fetchedAt)) return cached.organization;
+
+  // Always supplement cached organization data with the currently connected
+  // Zoho organization's identity. This prevents older cached records from
+  // rendering blank organization name/ID values in Settings.
+  if (!force && isFresh(cached.organization?.fetchedAt)) {
+    return {
+      ...cached.organization,
+      organizationId: cached.organization.organizationId || connection.organization_id || null,
+      organizationName: cached.organization.organizationName || connection.organization_name || null,
+    };
+  }
+
   try {
     if (!token) throw new Error("No valid Zoho access token");
-    const org = await fetchOrganizationDetails(connection.organization_id, { accessToken: token.accessToken, apiDomain: token.apiDomain });
+
+    const org = await fetchOrganizationDetails(connection.organization_id, {
+      accessToken: token.accessToken,
+      apiDomain: token.apiDomain,
+    });
+
     const settings = await mergeAppSettings(shop.id, "organization", {
+      organizationId: org.organization_id || connection.organization_id || null,
+      organizationName: org.organization_name || connection.organization_name || null,
       currencyCode: org.currency_code || null,
       currencySymbol: org.currency_symbol || null,
       fiscalYearStartMonth: org.fiscal_year_start_month || null,
@@ -33,10 +51,25 @@ async function loadOrganizationSettings(shop, token, connection, { force = false
       fetchedAt: new Date().toISOString(),
       stale: false,
     });
+
     return settings.organization;
   } catch (error) {
     console.error("Failed to refresh Zoho organization settings", error);
-    return cached.organization ? { ...cached.organization, stale: true } : null;
+
+    if (cached.organization) {
+      return {
+        ...cached.organization,
+        organizationId: cached.organization.organizationId || connection.organization_id || null,
+        organizationName: cached.organization.organizationName || connection.organization_name || null,
+        stale: true,
+      };
+    }
+
+    return {
+      organizationId: connection.organization_id || null,
+      organizationName: connection.organization_name || null,
+      stale: true,
+    };
   }
 }
 
