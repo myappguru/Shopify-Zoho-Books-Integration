@@ -9,6 +9,7 @@ import { getSyncedOrderCount, runOrderSync } from "../models/orderSync.server";
 import { getSyncedWebhookCount } from "../models/webhookLog.server";
 import { runInventoryPull } from "../models/inventorySync.server";
 import { getLatestSyncLog } from "../models/syncLog.server";
+import OtherApps from "../components/Common/OtherApps";
 import { useZohoConnectionSync } from "../hooks/useZohoConnectionSync";
 
 const syncStats = [
@@ -95,61 +96,62 @@ export default function Index() {
   return (
     <s-page heading="Dashboard">
       <style>{`
-        .dashboard { display:flex; flex-direction:column; gap:18px; padding-bottom:24px; }
+        .dashboard { display:flex; flex-direction:column; gap:16px; padding:2px 0 24px; }
         .dashboard-header { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
         .dashboard-title { font-size:28px; line-height:34px; font-weight:700; margin:0; letter-spacing:-.02em; }
         .dashboard-subtitle { margin:5px 0 0; color:#6b7280; font-size:14px; }
         .dashboard-actions { display:flex; gap:8px; flex-shrink:0; }
-        .kpi-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; }
-        .kpi-card,.panel,.connection-card { background:#fff; border:1px solid #e5e7eb; border-radius:14px; box-shadow:0 1px 2px rgba(0,0,0,.03); }
-        .kpi-card { padding:18px; min-height:145px; display:flex; flex-direction:column; justify-content:space-between; }
+        .kpi-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+        .kpi-card,.panel,.connection-card { background:#fff; border:1px solid #e1e3e5; border-radius:12px; box-shadow:0 1px 2px rgba(0,0,0,.025); }
+        .kpi-card { padding:16px; min-height:136px; display:flex; flex-direction:column; justify-content:space-between; }
         .kpi-top { display:flex; align-items:center; justify-content:space-between; gap:10px; }
-        .kpi-label { font-size:14px; font-weight:600; color:#4b5563; }
-        .kpi-icon { width:42px; height:42px; border-radius:12px; display:grid; place-items:center; background:#f1f5f9; }
-        .kpi-number { font-size:30px; line-height:34px; font-weight:700; margin-top:8px; color:#111827; }
-        .kpi-meta { display:flex; align-items:center; gap:7px; color:#6b7280; font-size:12px; }
+        .kpi-label { font-size:13px; font-weight:600; color:#4b5563; }
+        .kpi-icon { width:38px; height:38px; border-radius:10px; display:grid; place-items:center; background:#f1f5f9; }
+        .kpi-number { font-size:29px; line-height:34px; font-weight:700; margin-top:7px; color:#111827; }
+        .kpi-meta { display:flex; align-items:center; gap:7px; color:#6b7280; font-size:11px; }
         .success-text { color:#16a34a; font-weight:600; }
-        .connection-card { padding:18px 20px; display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:20px; }
-        .connection-side { display:flex; align-items:center; gap:12px; min-width:0; }
-        .connection-logo { width:46px; height:46px; border-radius:12px; display:grid; place-items:center; background:#f8fafc; border:1px solid #e5e7eb; }
-        .connection-name { font-weight:700; font-size:16px; }
-        .connection-caption { color:#6b7280; font-size:12px; margin-top:3px; }
-        .connection-center { text-align:center; min-width:180px; }
-        .connected-pill { display:inline-flex; align-items:center; gap:6px; background:#ecfdf3; color:#15803d; border-radius:999px; padding:6px 11px; font-size:12px; font-weight:700; }
-        .connected-dot { width:7px; height:7px; border-radius:50%; background:#22c55e; }
-        .connection-line { border-top:2px dashed #d1d5db; margin:10px 0 0; }
+        .connection-card { padding:15px 16px; display:grid; grid-template-columns:1fr 190px 1fr; align-items:center; gap:16px; }
+        .connection-side { display:flex; align-items:center; gap:11px; min-width:0; }
+        .connection-logo { width:40px; height:40px; border-radius:10px; display:grid; place-items:center; background:#f8fafc; border:1px solid #e5e7eb; flex:0 0 auto; }
+        .connection-name { font-weight:700; font-size:14px; }
+        .connection-caption { color:#6b7280; font-size:11px; margin-top:2px; }
+        .connection-center { text-align:center; min-width:0; }
+        .connected-pill { display:inline-flex; align-items:center; gap:6px; background:#ecfdf3; color:#15803d; border-radius:999px; padding:5px 10px; font-size:11px; font-weight:700; }
+        .connected-dot { width:6px; height:6px; border-radius:50%; background:#22c55e; }
+        .connection-line { border-top:2px dashed #d1d5db; margin:8px 0 0; }
         .connection-right { text-align:right; }
-        .connection-right strong { display:block; font-size:16px; }
-        .connection-right span { color:#6b7280; font-size:12px; }
-        .two-column { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:14px; }
+        .connection-right strong { display:block; font-size:14px; }
+        .connection-right span { color:#6b7280; font-size:11px; }
+        .two-column { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:12px; }
         .panel { overflow:hidden; }
-        .panel-header { padding:18px 18px 10px; }
-        .panel-title { margin:0; font-size:16px; font-weight:700; color:#111827; }
-        .panel-subtitle { margin:4px 0 0; color:#6b7280; font-size:12px; }
-        .sync-row { display:grid; grid-template-columns:110px minmax(80px,1fr) 48px 80px; align-items:center; gap:12px; padding:11px 18px; }
-        .sync-label { display:flex; align-items:center; gap:8px; font-size:13px; font-weight:600; }
-        .sync-dot { width:8px; height:8px; border-radius:50%; background:#22c55e; }
-        .progress-track { height:7px; background:#eef2f7; border-radius:999px; overflow:hidden; }
+        .panel-header { padding:15px 16px 9px; }
+        .panel-title { margin:0; font-size:15px; font-weight:700; color:#111827; }
+        .panel-subtitle { margin:3px 0 0; color:#6b7280; font-size:11px; }
+        .sync-row { display:grid; grid-template-columns:105px minmax(80px,1fr) 42px 72px; align-items:center; gap:10px; padding:9px 16px; }
+        .sync-label { display:flex; align-items:center; gap:7px; font-size:12px; font-weight:600; }
+        .sync-dot { width:7px; height:7px; border-radius:50%; background:#22c55e; }
+        .progress-track { height:6px; background:#eef2f7; border-radius:999px; overflow:hidden; }
         .progress-fill { height:100%; background:#4f46e5; border-radius:999px; }
-        .progress-value { font-size:12px; font-weight:700; text-align:right; }
-        .progress-count { font-size:11px; color:#6b7280; text-align:right; }
+        .progress-value { font-size:11px; font-weight:700; text-align:right; }
+        .progress-count { font-size:10px; color:#6b7280; text-align:right; }
         .activity-list { display:flex; flex-direction:column; }
-        .activity-row { display:grid; grid-template-columns:24px minmax(0,1fr) auto auto; gap:10px; align-items:center; padding:11px 18px; border-top:1px solid #f0f1f3; }
-        .activity-icon { width:24px; height:24px; border-radius:50%; display:grid; place-items:center; background:#ecfdf3; color:#16a34a; font-size:12px; font-weight:700; }
-        .activity-title { font-size:13px; font-weight:600; color:#111827; }
-        .activity-meta { font-size:11px; color:#6b7280; margin-top:2px; }
-        .status-pill { padding:4px 8px; border-radius:999px; background:#ecfdf3; color:#15803d; font-size:11px; font-weight:700; }
+        .activity-row { display:grid; grid-template-columns:22px minmax(0,1fr) auto auto; gap:9px; align-items:center; padding:9px 16px; border-top:1px solid #f0f1f3; }
+        .activity-icon { width:22px; height:22px; border-radius:50%; display:grid; place-items:center; background:#ecfdf3; color:#16a34a; font-size:11px; font-weight:700; }
+        .activity-title { font-size:12px; font-weight:600; color:#111827; }
+        .activity-meta { font-size:10px; color:#6b7280; margin-top:2px; }
+        .status-pill { padding:4px 8px; border-radius:999px; background:#ecfdf3; color:#15803d; font-size:10px; font-weight:700; white-space:nowrap; }
         .status-partial { background:#fff7ed; color:#c2410c; }
-        .activity-time { font-size:11px; color:#6b7280; white-space:nowrap; }
+        .activity-time { font-size:10px; color:#6b7280; white-space:nowrap; }
         .history-table { width:100%; border-collapse:collapse; }
-        .history-table th { text-align:left; padding:10px 18px; background:#f8fafc; color:#6b7280; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
-        .history-table td { padding:12px 18px; border-top:1px solid #f0f1f3; font-size:12px; color:#374151; }
-        .history-type { display:flex; align-items:center; gap:8px; font-weight:600; color:#111827; }
-        .history-footer { padding:13px 18px; border-top:1px solid #f0f1f3; text-align:center; }
-        .history-footer a { color:#4338ca; font-size:12px; font-weight:600; text-decoration:none; }
-        .empty-state { padding:28px 18px; color:#6b7280; font-size:13px; text-align:center; }
+        .history-table th { text-align:left; padding:9px 16px; background:#f8fafc; color:#6b7280; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
+        .history-table td { padding:10px 16px; border-top:1px solid #f0f1f3; font-size:11px; color:#374151; }
+        .history-type { display:flex; align-items:center; gap:7px; font-weight:600; color:#111827; }
+        .history-footer { padding:11px 16px; border-top:1px solid #f0f1f3; text-align:center; }
+        .history-footer a { color:#4338ca; font-size:11px; font-weight:600; text-decoration:none; }
+        .empty-state { padding:24px 16px; color:#6b7280; font-size:12px; text-align:center; }
+        .last-sync { color:#6b7280; font-size:11px; }
         @media (max-width: 900px) { .kpi-grid,.two-column { grid-template-columns:1fr 1fr; } .connection-card { grid-template-columns:1fr; text-align:left; } .connection-center,.connection-right { text-align:left; } }
-        @media (max-width: 620px) { .kpi-grid,.two-column { grid-template-columns:1fr; } .dashboard-header { flex-direction:column; } .sync-row { grid-template-columns:100px 1fr 45px; } .progress-count { display:none; } .activity-row { grid-template-columns:24px 1fr auto; } .activity-time { display:none; } }
+        @media (max-width: 620px) { .kpi-grid,.two-column { grid-template-columns:1fr; } .dashboard-header { flex-direction:column; } .sync-row { grid-template-columns:100px 1fr 42px; } .progress-count { display:none; } .activity-row { grid-template-columns:22px 1fr auto; } .activity-time { display:none; } }
       `}</style>
 
       <div className="dashboard">
@@ -175,7 +177,7 @@ export default function Index() {
         <div className="connection-card">
           <div className="connection-side"><div className="connection-logo"><s-icon type="store" tone="success"></s-icon></div><div><div className="connection-name">Shopify</div><div className="connection-caption">Store connected and ready to sync</div></div></div>
           <div className="connection-center"><span className="connected-pill"><span className="connected-dot"></span>{zohoConnected ? "Connected" : "Zoho not connected"}</span><div className="connection-line"></div></div>
-          <div className="connection-side" style={{ justifyContent: "flex-end" }}><div className="connection-right"><strong>{zohoConnected ? "Zoho Books" : "Connect Zoho Books"}</strong><span>{zohoConnected ? (zohoOrganizationName || "Organization connected") : "Authorize your Zoho organization to enable sync"}</span>{!zohoConnected && <div style={{ marginTop: 8 }}><s-button variant="primary" onClick={() => openZohoAuthWindow(zohoAuthUrl)}>Connect</s-button></div>}</div><div className="connection-logo"><s-icon type="link" tone={zohoConnected ? "success" : "caution"}></s-icon></div></div>
+          <div className="connection-side" style={{ justifyContent: "flex-end" }}><div className="connection-right"><strong>{zohoConnected ? "Zoho Books" : "Connect Zoho Books"}</strong><span>{zohoConnected ? (zohoOrganizationName || "Organization connected") : "Authorize your Zoho organization to enable sync"}</span>{!zohoConnected && <div style={{ marginTop: 7 }}><s-button variant="primary" onClick={() => openZohoAuthWindow(zohoAuthUrl)}>Connect</s-button></div>}</div><div className="connection-logo"><s-icon type="link" tone={zohoConnected ? "success" : "caution"}></s-icon></div></div>
         </div>
 
         <div className="two-column">
@@ -191,13 +193,13 @@ export default function Index() {
         </div>
 
         <div className="panel"><div className="panel-header"><h2 className="panel-title">Recent Sync History</h2><p className="panel-subtitle">Summary of recent synchronization operations</p></div>
-          {hasActivity ? <table className="history-table"><thead><tr><th>Type</th><th>Records</th><th>Status</th><th>Date &amp; Time</th><th>Duration</th></tr></thead><tbody>
-            {logs.filter((item) => item.log).map((item) => { const failed = Number(item.log.records_failed || 0) > 0; const started = item.log.started_at ? new Date(item.log.started_at) : null; const completed = item.log.completed_at ? new Date(item.log.completed_at) : null; const duration = started && completed ? Math.max(0, Math.round((completed - started) / 1000)) : null; const durationLabel = duration == null ? "—" : `${String(Math.floor(duration / 60)).padStart(2, "0")}:${String(duration % 60).padStart(2, "0")}`; return <tr key={item.key}><td><span className="history-type"><s-icon type={item.iconType} tone={item.iconTone}></s-icon>{labels[item.key]}</span></td><td>{formatCount(item.log.records_processed)}</td><td><span className={`status-pill ${failed ? "status-partial" : ""}`}>{failed ? "Partial" : "Success"}</span></td><td>{formatDate(item.log.completed_at || item.log.started_at)}</td><td>{durationLabel}</td></tr>; })}
-          </tbody></table> : <div className="empty-state">Your recent sync operations will appear here.</div>}
+          {hasActivity ? <table className="history-table"><thead><tr><th>Type</th><th>Records</th><th>Status</th><th>Date &amp; Time</th><th>Duration</th></tr></thead><tbody>{logs.filter((item) => item.log).map((item) => { const failed = Number(item.log.records_failed || 0) > 0; const started = item.log.started_at ? new Date(item.log.started_at) : null; const completed = item.log.completed_at ? new Date(item.log.completed_at) : null; const duration = started && completed ? Math.max(0, Math.round((completed - started) / 1000)) : null; return <tr key={item.key}><td><span className="history-type"><s-icon type={item.iconType} tone={item.iconTone}></s-icon>{labels[item.key]}</span></td><td>{formatCount(item.log.records_processed)}</td><td><span className={`status-pill ${failed ? "status-partial" : ""}`}>{failed ? "Partial" : "Success"}</span></td><td>{formatDate(item.log.completed_at || item.log.started_at)}</td><td>{duration == null ? "—" : `${String(Math.floor(duration / 60)).padStart(2, "0")}:${String(duration % 60).padStart(2, "0")`}</td></tr>; })}</tbody></table> : <div className="empty-state">Your recent sync operations will appear here.</div>}
           <div className="history-footer"><a href="/app/sync-history">View full sync history →</a></div>
         </div>
 
-        {lastSync && <div style={{ color: "#6b7280", fontSize: 12 }}>Last synchronization: {formatDate(lastSync.completed_at || lastSync.started_at)}</div>}
+        <OtherApps />
+
+        {lastSync && <div className="last-sync">Last synchronization: {formatDate(lastSync.completed_at || lastSync.started_at)}</div>}
       </div>
     </s-page>
   );
