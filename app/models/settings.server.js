@@ -15,26 +15,12 @@ const isFresh = (value) => Boolean(value) && Date.now() - new Date(value).getTim
 
 async function loadOrganizationSettings(shop, token, connection, { force = false } = {}) {
   const cached = await getAppSettings(shop.id);
-
-  // Always supplement cached organization data with the currently connected
-  // Zoho organization's identity. This prevents older cached records from
-  // rendering blank organization name/ID values in Settings.
   if (!force && isFresh(cached.organization?.fetchedAt)) {
-    return {
-      ...cached.organization,
-      organizationId: cached.organization.organizationId || connection.organization_id || null,
-      organizationName: cached.organization.organizationName || connection.organization_name || null,
-    };
+    return { ...cached.organization, organizationId: cached.organization.organizationId || connection.organization_id || null, organizationName: cached.organization.organizationName || connection.organization_name || null };
   }
-
   try {
     if (!token) throw new Error("No valid Zoho access token");
-
-    const org = await fetchOrganizationDetails(connection.organization_id, {
-      accessToken: token.accessToken,
-      apiDomain: token.apiDomain,
-    });
-
+    const org = await fetchOrganizationDetails(connection.organization_id, { accessToken: token.accessToken, apiDomain: token.apiDomain });
     const settings = await mergeAppSettings(shop.id, "organization", {
       organizationId: org.organization_id || connection.organization_id || null,
       organizationName: org.organization_name || connection.organization_name || null,
@@ -51,25 +37,10 @@ async function loadOrganizationSettings(shop, token, connection, { force = false
       fetchedAt: new Date().toISOString(),
       stale: false,
     });
-
     return settings.organization;
   } catch (error) {
     console.error("Failed to refresh Zoho organization settings", error);
-
-    if (cached.organization) {
-      return {
-        ...cached.organization,
-        organizationId: cached.organization.organizationId || connection.organization_id || null,
-        organizationName: cached.organization.organizationName || connection.organization_name || null,
-        stale: true,
-      };
-    }
-
-    return {
-      organizationId: connection.organization_id || null,
-      organizationName: connection.organization_name || null,
-      stale: true,
-    };
+    return cached.organization ? { ...cached.organization, organizationId: cached.organization.organizationId || connection.organization_id || null, organizationName: cached.organization.organizationName || connection.organization_name || null, stale: true } : { organizationId: connection.organization_id || null, organizationName: connection.organization_name || null, stale: true };
   }
 }
 
@@ -108,12 +79,21 @@ export const loader = async ({ request }) => {
   const locationsJson = await locationsResponse.json();
   const locations = (locationsJson.data?.locations?.edges || []).map(({ node }) => node);
   return {
-    connection: connection ? { organizationId: connection.organization_id, organizationName: connection.organization_name, dataCenter: connection.data_center, connectedAt: connection.connected_at } : null,
+    connection: connection ? {
+      organizationId: connection.organization_id,
+      organizationName: connection.organization_name,
+      dataCenter: connection.data_center,
+      connectedAt: connection.connected_at,
+      tokenExpiresAt: connection.access_token_expires_at,
+      tokenMasked: token?.accessToken ? `zoho${"•".repeat(28)}${token.accessToken.slice(-4)}` : "zoho••••••••••••••••••••••••••••••••",
+      connectedBy: connection.connected_by || "Zoho Books account",
+      scope: connection.scope || null,
+    } : null,
     organization, locations, locationsError: Boolean(locationsJson.errors) && locations.length === 0,
     warehouses: warehousesResult.items, warehouseMappings, warehouseSyncError: warehousesResult.error,
     taxes: taxesResult.items, taxSyncError: taxesResult.error, taxSettings, taxRateRows,
     accounts: accountsResult.items, accountSyncError: accountsResult.error, accountSettings,
-    zohoAuthUrl: connection ? null : getAuthorizationUrl(session.shop),
+    zohoAuthUrl: connection ? getAuthorizationUrl(session.shop) : getAuthorizationUrl(session.shop),
   };
 };
 
@@ -129,6 +109,9 @@ export const action = async ({ request }) => {
     await loadZohoList(shop, "warehouses", token, () => fetchWarehouses({ accessToken: token.accessToken, apiDomain: token.apiDomain, organizationId: connection.organization_id }), { force: true });
     await loadZohoList(shop, "taxes", token, () => fetchTaxes({ accessToken: token.accessToken, apiDomain: token.apiDomain, organizationId: connection.organization_id }), { force: true });
     await loadZohoList(shop, "accounts", token, () => fetchChartOfAccounts({ accessToken: token.accessToken, apiDomain: token.apiDomain, organizationId: connection.organization_id }), { force: true });
+  }
+  if (intent === "test-connection" && connection) {
+    await getValidAccessToken(shop.id);
   }
   if (intent === "save-warehouse-mapping") {
     for (const [key, value] of formData.entries()) {
