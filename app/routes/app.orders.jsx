@@ -2,16 +2,8 @@ import { Fragment, useMemo, useState } from "react";
 import { Form, useLoaderData, useNavigation } from "react-router";
 import { authenticate } from "../shopify.server";
 import { useAutoDismiss } from "../hooks/useAutoDismiss";
-import {
-  getConnectionForShopDomain,
-  getValidAccessToken,
-} from "../models/zohoConnection.server";
-import {
-  getOrderMappings,
-  ORDERS_QUERY,
-  normalizeOrderNode,
-  runOrderSync,
-} from "../models/orderSync.server";
+import { getConnectionForShopDomain, getValidAccessToken } from "../models/zohoConnection.server";
+import { getOrderMappings, ORDERS_QUERY, normalizeOrderNode, runOrderSync } from "../models/orderSync.server";
 import { getInvoiceMappings } from "../models/invoiceSync.server";
 import { getPaymentMappings } from "../models/paymentSync.server";
 import { getLatestSyncLog } from "../models/syncLog.server";
@@ -19,30 +11,19 @@ import { getLatestSyncLog } from "../models/syncLog.server";
 const PAGE_SIZE = 10;
 const ORDER_COUNT_QUERY = `#graphql
   query OrdersCount {
-    ordersCount {
-      count
-    }
+    ordersCount { count }
   }
 `;
 
-function shopifyNumericId(gid) {
-  return gid ? gid.split("/").pop() : null;
-}
+function shopifyNumericId(gid) { return gid ? gid.split("/").pop() : null; }
 
 async function fetchOrdersPage(admin, { after, before } = {}) {
-  const variables = before
-    ? { last: PAGE_SIZE, before }
-    : { first: PAGE_SIZE, after: after || null };
+  const variables = before ? { last: PAGE_SIZE, before } : { first: PAGE_SIZE, after: after || null };
   const response = await admin.graphql(ORDERS_QUERY, { variables });
   const json = await response.json();
   return {
     orders: (json.data?.orders?.edges || []).map(({ node }) => normalizeOrderNode(node)),
-    pageInfo: json.data?.orders?.pageInfo || {
-      hasNextPage: false,
-      hasPreviousPage: false,
-      startCursor: null,
-      endCursor: null,
-    },
+    pageInfo: json.data?.orders?.pageInfo || { hasNextPage: false, hasPreviousPage: false, startCursor: null, endCursor: null },
   };
 }
 
@@ -52,96 +33,37 @@ export const loader = async ({ request }) => {
   const url = new URL(request.url);
   const after = url.searchParams.get("after") || undefined;
   const before = url.searchParams.get("before") || undefined;
-
-  const [{ orders, pageInfo }, countResponse] = await Promise.all([
-    fetchOrdersPage(admin, { after, before }),
-    admin.graphql(ORDER_COUNT_QUERY),
-  ]);
+  const [{ orders, pageInfo }, countResponse] = await Promise.all([fetchOrdersPage(admin, { after, before }), admin.graphql(ORDER_COUNT_QUERY)]);
   const countJson = await countResponse.json();
   const totalOrders = Number(countJson.data?.ordersCount?.count || 0);
-
   const mappings = connection ? await getOrderMappings(shop.id) : {};
   const invoiceMappings = connection ? await getInvoiceMappings(shop.id) : {};
   const paymentMappings = connection ? await getPaymentMappings(shop.id) : {};
   const latestLog = connection ? await getLatestSyncLog(shop.id, "order") : null;
   const latestInvoiceLog = connection ? await getLatestSyncLog(shop.id, "invoice") : null;
   const latestPaymentLog = connection ? await getLatestSyncLog(shop.id, "payment") : null;
-
-  return {
-    connected: Boolean(connection),
-    orders,
-    pageInfo,
-    mappings,
-    invoiceMappings,
-    paymentMappings,
-    latestLog,
-    latestInvoiceLog,
-    latestPaymentLog,
-    totalOrders,
-  };
+  return { connected: Boolean(connection), orders, pageInfo, mappings, invoiceMappings, paymentMappings, latestLog, latestInvoiceLog, latestPaymentLog, totalOrders };
 };
 
 export const action = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
   const formData = await request.formData();
   if (formData.get("intent") !== "sync-now") return null;
-
   const { shop, connection } = await getConnectionForShopDomain(session.shop);
   if (!connection) return null;
-  const token = await getValidAccessToken(shop.id).catch((error) => {
-    console.error("Failed to get a valid Zoho access token for order sync", error);
-    return null;
-  });
+  const token = await getValidAccessToken(shop.id).catch((error) => { console.error("Failed to get a valid Zoho access token for order sync", error); return null; });
   if (!token) return null;
-
-  await runOrderSync({
-    admin,
-    shop,
-    zohoAuth: {
-      accessToken: token.accessToken,
-      apiDomain: token.apiDomain,
-      organizationId: connection.organization_id,
-    },
-  });
+  await runOrderSync({ admin, shop, zohoAuth: { accessToken: token.accessToken, apiDomain: token.apiDomain, organizationId: connection.organization_id } });
   return null;
 };
 
-function money(value) {
-  return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(Number(value || 0));
-}
-function dateParts(value) {
-  if (!value) return { date: "—", time: "" };
-  const date = new Date(value);
-  return {
-    date: date.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" }),
-    time: date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }),
-  };
-}
-function statusTone(status) {
-  const value = String(status || "").toLowerCase();
-  if (["paid", "fulfilled", "synced", "invoiced", "success"].some((x) => value.includes(x))) return "success";
-  if (["failed", "error", "unpaid"].some((x) => value.includes(x))) return "critical";
-  if (["refunded"].some((x) => value.includes(x))) return "info";
-  return "warning";
-}
-
-function StatusBadge({ label, tone }) {
-  return <span className={`order-status order-status-${tone}`}><span className="status-dot">{tone === "success" ? "✓" : tone === "critical" ? "×" : tone === "info" ? "i" : "○"}</span>{label}</span>;
-}
+function money(value) { return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(Number(value || 0)); }
+function dateParts(value) { if (!value) return { date: "—", time: "" }; const date = new Date(value); return { date: date.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" }), time: date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }) }; }
+function statusTone(status) { const value = String(status || "").toLowerCase(); if (["paid", "fulfilled", "synced", "invoiced", "success"].some((x) => value.includes(x))) return "success"; if (["failed", "error", "unpaid"].some((x) => value.includes(x))) return "critical"; if (["refunded"].some((x) => value.includes(x))) return "info"; return "warning"; }
+function StatusBadge({ label, tone }) { return <span className={`order-status order-status-${tone}`}><span className="status-dot">{tone === "success" ? "✓" : tone === "critical" ? "×" : tone === "info" ? "i" : "○"}</span>{label}</span>; }
 
 export default function OrdersPage() {
-  const {
-    connected,
-    orders,
-    pageInfo,
-    mappings,
-    invoiceMappings,
-    paymentMappings,
-    latestLog,
-    latestInvoiceLog,
-    latestPaymentLog,
-    totalOrders,
-  } = useLoaderData();
+  const { connected, orders, pageInfo, mappings, invoiceMappings, paymentMappings, latestLog, latestInvoiceLog, latestPaymentLog, totalOrders } = useLoaderData();
   const navigation = useNavigation();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -150,7 +72,6 @@ export default function OrdersPage() {
   const [menuOrder, setMenuOrder] = useState(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-
   const isSyncing = navigation.state === "submitting" && navigation.formData?.get("intent") === "sync-now";
   const isLoading = navigation.state === "loading";
   const showLog = useAutoDismiss(latestLog?.id);
@@ -181,29 +102,15 @@ export default function OrdersPage() {
   const failedPercent = orders.length ? ((failedCount / orders.length) * 100).toFixed(1) : "0.0";
   const notSyncedPercent = orders.length ? ((notSyncedCount / orders.length) * 100).toFixed(1) : "0.0";
 
-  function refreshPage() {
-    if (refreshing) return;
-    setRefreshing(true);
-    window.location.reload();
-  }
+  function refreshPage() { if (refreshing) return; setRefreshing(true); window.location.reload(); }
   function exportOrders() {
-    const rows = filteredOrders.map((order) => {
-      const customer = order.customer ? `${order.customer.firstName || ""} ${order.customer.lastName || ""}`.trim() : "Guest";
-      const mapping = mappings[order.id];
-      return [order.name, dateParts(order.createdAt).date, customer, order.lineItems?.length || 0, order.totalPrice || "0", mapping?.status || "not synced"];
-    });
+    const rows = filteredOrders.map((order) => { const customer = order.customer ? `${order.customer.firstName || ""} ${order.customer.lastName || ""}`.trim() : "Guest"; const mapping = mappings[order.id]; return [order.name, dateParts(order.createdAt).date, customer, order.lineItems?.length || 0, order.totalPrice || "0", mapping?.status || "not synced"]; });
     const csv = [["Order #", "Date", "Customer", "Items", "Total", "Sync Status"], ...rows].map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "shopify-orders.csv";
-    link.click();
-    URL.revokeObjectURL(url);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" }); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = "shopify-orders.csv"; link.click(); URL.revokeObjectURL(url);
   }
 
   return (
-    <s-page heading="Orders">
+    <s-page heading="Orders" inlineSize="large">
       <style>{`
         .orders-page { width:80%; max-width:1260px; margin:0 auto; padding:18px 0 30px; color:#202223; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
         .orders-header { display:flex; justify-content:space-between; align-items:flex-start; gap:20px; margin-bottom:20px; }
@@ -227,17 +134,8 @@ export default function OrdersPage() {
         @media(max-width:1100px){.orders-page{width:94%}.summary-grid{grid-template-columns:repeat(3,1fr)}.toolbar{flex-wrap:wrap}.search-box{flex-basis:100%}.export-button{margin-left:0}}
         @media(max-width:700px){.orders-page{width:100%;padding:12px}.orders-header{flex-direction:column}.summary-grid{grid-template-columns:1fr 1fr}.toolbar{align-items:stretch}.filter-select,.filter-button{flex:1}.orders-table{min-width:1120px}}
       `}</style>
-
       <div className="orders-page" onClick={() => menuOrder && setMenuOrder(null)}>
-        <div className="orders-header">
-          <div><h1 className="orders-title">Orders</h1><p className="orders-subtitle">View and manage your Shopify orders and their sync status with Zoho Books.</p></div>
-          <div className="orders-actions">
-            <span className="connection-pill"><span className="dot"></span>{connected ? "Connected" : "Zoho not connected"}</span>
-            <s-button icon="refresh" loading={refreshing || isLoading} onClick={refreshPage}>Refresh</s-button>
-            <Form method="post"><input type="hidden" name="intent" value="sync-now" /><s-button variant="primary" icon="refresh" loading={isSyncing} disabled={!connected}>Sync Orders</s-button></Form>
-          </div>
-        </div>
-
+        <div className="orders-header"><div><h1 className="orders-title">Orders</h1><p className="orders-subtitle">View and manage your Shopify orders and their sync status with Zoho Books.</p></div><div className="orders-actions"><span className="connection-pill"><span className="dot"></span>{connected ? "Connected" : "Zoho not connected"}</span><s-button icon="refresh" loading={refreshing || isLoading} onClick={refreshPage}>Refresh</s-button><Form method="post"><input type="hidden" name="intent" value="sync-now" /><s-button variant="primary" icon="refresh" loading={isSyncing} disabled={!connected}>Sync Orders</s-button></Form></div></div>
         <div className="summary-grid">
           <div className="summary-card"><div className="summary-label">Total Orders</div><div className="summary-value">{new Intl.NumberFormat().format(totalOrders)}</div><div className="summary-note">All orders</div><div className="summary-icon">🛒</div></div>
           <div className="summary-card"><div className="summary-label">Synced to Zoho Books</div><div className="summary-value">{new Intl.NumberFormat().format(syncedCount)}</div><div className="summary-note success">{syncPercent}%</div><div className="summary-icon">✓</div></div>
@@ -245,41 +143,12 @@ export default function OrdersPage() {
           <div className="summary-card"><div className="summary-label">Sync Failed</div><div className="summary-value">{new Intl.NumberFormat().format(failedCount)}</div><div className="summary-note critical">{failedPercent}%</div><div className="summary-icon">!</div></div>
           <div className="summary-card"><div className="summary-label">Total Sales</div><div className="summary-value">{money(pageSales)}</div><div className="summary-note">Current page</div><div className="summary-icon">▣</div></div>
         </div>
-
         <div className="orders-panel">
-          <div className="toolbar">
-            <div className="search-box"><span>⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search orders by order #, customer, email..." /></div>
-            <select className="filter-select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="all">All Status</option><option value="paid">Paid</option><option value="unpaid">Unpaid</option><option value="fulfilled">Fulfilled</option></select>
-            <select className="filter-select" value={paymentFilter} onChange={(event) => setPaymentFilter(event.target.value)}><option value="all">Payment Status</option><option value="paid">Paid</option><option value="pending">Pending</option><option value="refunded">Refunded</option><option value="unpaid">Unpaid</option></select>
-            <select className="filter-select" value={syncFilter} onChange={(event) => setSyncFilter(event.target.value)}><option value="all">Sync Status</option><option value="synced">Synced</option><option value="not synced">Not Synced</option><option value="sync failed">Sync Failed</option></select>
-            <div className="filters-wrap"><button className="filter-button" type="button" onClick={(event) => { event.stopPropagation(); setFiltersOpen((value) => !value); }}>⚱ Filters</button>{filtersOpen && <div className="filters-popover" onClick={(event) => event.stopPropagation()}><label>Clear additional filters</label><p style={{fontSize:12,color:'#616161',lineHeight:1.5,margin:'0 0 10px'}}>Use the status controls above to narrow the current Shopify order page.</p><button className="filter-button" type="button" onClick={() => {setSearch('');setStatusFilter('all');setPaymentFilter('all');setSyncFilter('all');setFiltersOpen(false);}}>Clear all filters</button></div>}</div>
-            <button className="export-button" type="button" onClick={exportOrders}>⇩ Export</button>
-          </div>
-
+          <div className="toolbar"><div className="search-box"><span>⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search orders by order #, customer, email..." /></div><select className="filter-select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="all">All Status</option><option value="paid">Paid</option><option value="unpaid">Unpaid</option><option value="fulfilled">Fulfilled</option></select><select className="filter-select" value={paymentFilter} onChange={(event) => setPaymentFilter(event.target.value)}><option value="all">Payment Status</option><option value="paid">Paid</option><option value="pending">Pending</option><option value="refunded">Refunded</option><option value="unpaid">Unpaid</option></select><select className="filter-select" value={syncFilter} onChange={(event) => setSyncFilter(event.target.value)}><option value="all">Sync Status</option><option value="synced">Synced</option><option value="not synced">Not Synced</option><option value="sync failed">Sync Failed</option></select><div className="filters-wrap"><button className="filter-button" type="button" onClick={(event) => { event.stopPropagation(); setFiltersOpen((value) => !value); }}>⚱ Filters</button>{filtersOpen && <div className="filters-popover" onClick={(event) => event.stopPropagation()}><label>Clear additional filters</label><p style={{fontSize:12,color:'#616161',lineHeight:1.5,margin:'0 0 10px'}}>Use the status controls above to narrow the current Shopify order page.</p><button className="filter-button" type="button" onClick={() => {setSearch('');setStatusFilter('all');setPaymentFilter('all');setSyncFilter('all');setFiltersOpen(false);}}>Clear all filters</button></div>}</div><button className="export-button" type="button" onClick={exportOrders}>⇩ Export</button></div>
           {connected && latestLog && showLog && <div className={`sync-note ${latestLog.records_failed > 0 ? "warning" : "success"}`}>Last order sync: {new Date(latestLog.completed_at || latestLog.started_at).toLocaleString()} — {latestLog.records_processed} processed, {latestLog.records_success} succeeded, {latestLog.records_failed} failed.</div>}
           {connected && latestInvoiceLog && showInvoiceLog && <div className={`sync-note ${latestInvoiceLog.records_failed > 0 ? "warning" : "success"}`}>Last invoice sync: {new Date(latestInvoiceLog.completed_at || latestInvoiceLog.started_at).toLocaleString()} — {latestInvoiceLog.records_processed} processed, {latestInvoiceLog.records_success} succeeded, {latestInvoiceLog.records_failed} failed.</div>}
           {connected && latestPaymentLog && showPaymentLog && <div className={`sync-note ${latestPaymentLog.records_failed > 0 ? "warning" : "success"}`}>Last payment sync: {new Date(latestPaymentLog.completed_at || latestPaymentLog.started_at).toLocaleString()} — {latestPaymentLog.records_processed} processed, {latestPaymentLog.records_success} succeeded, {latestPaymentLog.records_failed} failed.</div>}
-
-          {filteredOrders.length === 0 ? <div className="empty-state">No orders match your current filters.</div> : <div className="table-wrap"><table className="orders-table"><thead><tr><th className="check-col"><input className="checkbox" type="checkbox" aria-label="Select all orders" /></th><th className="order-col">Order #</th><th className="date-col">Date</th><th className="customer-col">Customer</th><th className="payment-col">Payment Status</th><th className="fulfillment-col">Fulfillment Status</th><th className="total-col">Total</th><th className="sync-col">Sync Status</th><th className="invoice-col">Zoho Books Invoice #</th><th className="action-col">Action</th></tr></thead><tbody>
-            {filteredOrders.map((order, orderIndex) => {
-              const mapping = mappings[order.id];
-              const invoiceMapping = invoiceMappings[order.id];
-              const paymentMapping = paymentMappings[order.id];
-              const paymentRaw = String(order.displayFinancialStatus || order.financialStatus || "Pending").toLowerCase();
-              const fulfillmentRaw = String(order.displayFulfillmentStatus || order.fulfillmentStatus || "Unfulfilled").toLowerCase();
-              const paymentLabel = paymentRaw.includes("paid") ? "Paid" : paymentRaw.includes("refunded") ? "Refunded" : paymentRaw.includes("unpaid") ? "Unpaid" : "Pending";
-              const fulfillmentLabel = fulfillmentRaw.includes("fulfilled") && !fulfillmentRaw.includes("unfulfilled") ? "Fulfilled" : fulfillmentRaw.includes("partial") ? "Partially Fulfilled" : "Unfulfilled";
-              const syncLabel = !mapping ? "Not Synced" : mapping.status === "error" ? "Sync Failed" : mapping.status === "voided" ? "Voided" : "Synced";
-              const invoiceLabel = invoiceMapping?.status === "error" ? "Invoice error" : invoiceMapping ? invoiceMapping.zohoId || "Invoiced" : "—";
-              const customerLabel = order.customer ? `${order.customer.firstName || ""} ${order.customer.lastName || ""}`.trim() || order.customer.email : order.email || "Guest";
-              const parts = dateParts(order.createdAt);
-              return <Fragment key={order.id}>
-                {orderIndex > 0 && null}
-                <tr><td><input className="checkbox" type="checkbox" aria-label={`Select ${order.name}`} /></td><td><a className="order-link" href={`shopify://admin/orders/${shopifyNumericId(order.id)}`} target="_top">{order.name}</a><span className="secondary"><StatusBadge label={paymentLabel} tone={statusTone(paymentLabel)} /></span></td><td><span>{parts.date}</span><span className="secondary">{parts.time}</span></td><td>{order.customer ? <a className="customer-name" href={`shopify://admin/customers/${shopifyNumericId(order.customer.id)}`} target="_top">{customerLabel}</a> : <span className="customer-name">{customerLabel}</span>}<span className="customer-email">{order.customer?.email || order.email || "—"}</span></td><td><StatusBadge label={paymentLabel} tone={statusTone(paymentLabel)} /></td><td><StatusBadge label={fulfillmentLabel} tone={fulfillmentLabel === "Fulfilled" ? "success" : fulfillmentLabel === "Partially Fulfilled" ? "warning" : "warning"} /></td><td><span>{money(order.totalPrice || order.totalPriceSet?.shopMoney?.amount)}</span><span className="secondary">USD</span></td><td><StatusBadge label={syncLabel} tone={statusTone(syncLabel)} /></td><td>{invoiceLabel === "—" ? "—" : <span>{invoiceLabel}</span>}</td><td className="action-col"><div className="action-menu"><button className="dots-button" type="button" aria-label={`Actions for ${order.name}`} onClick={(event) => { event.stopPropagation(); setMenuOrder(menuOrder === order.id ? null : order.id); }}>•••</button>{menuOrder === order.id && <div className="menu" onClick={(event) => event.stopPropagation()}><button type="button" onClick={() => window.open(`shopify://admin/orders/${shopifyNumericId(order.id)}`, "_top")}>View order in Shopify</button><button type="button" onClick={() => {setMenuOrder(null); alert("Use Sync Orders to synchronize the complete order set.");}}>Sync status details</button></div>}</div></td></tr>
-              </Fragment>;
-            })}
-          </tbody></table></div>}
-
+          {filteredOrders.length === 0 ? <div className="empty-state">No orders match your current filters.</div> : <div className="table-wrap"><table className="orders-table"><thead><tr><th className="check-col"><input className="checkbox" type="checkbox" aria-label="Select all orders" /></th><th className="order-col">Order #</th><th className="date-col">Date</th><th className="customer-col">Customer</th><th className="payment-col">Payment Status</th><th className="fulfillment-col">Fulfillment Status</th><th className="total-col">Total</th><th className="sync-col">Sync Status</th><th className="invoice-col">Zoho Books Invoice #</th><th className="action-col">Action</th></tr></thead><tbody>{filteredOrders.map((order) => { const mapping = mappings[order.id]; const invoiceMapping = invoiceMappings[order.id]; const paymentRaw = String(order.displayFinancialStatus || order.financialStatus || "Pending").toLowerCase(); const fulfillmentRaw = String(order.displayFulfillmentStatus || order.fulfillmentStatus || "Unfulfilled").toLowerCase(); const paymentLabel = paymentRaw.includes("paid") ? "Paid" : paymentRaw.includes("refunded") ? "Refunded" : paymentRaw.includes("unpaid") ? "Unpaid" : "Pending"; const fulfillmentLabel = fulfillmentRaw.includes("fulfilled") && !fulfillmentRaw.includes("unfulfilled") ? "Fulfilled" : fulfillmentRaw.includes("partial") ? "Partially Fulfilled" : "Unfulfilled"; const syncLabel = !mapping ? "Not Synced" : mapping.status === "error" ? "Sync Failed" : mapping.status === "voided" ? "Voided" : "Synced"; const invoiceLabel = invoiceMapping?.status === "error" ? "Invoice error" : invoiceMapping ? invoiceMapping.zohoId || "Invoiced" : "—"; const customerLabel = order.customer ? `${order.customer.firstName || ""} ${order.customer.lastName || ""}`.trim() || order.customer.email : order.email || "Guest"; const parts = dateParts(order.createdAt); return <tr key={order.id}><td><input className="checkbox" type="checkbox" aria-label={`Select ${order.name}`} /></td><td><a className="order-link" href={`shopify://admin/orders/${shopifyNumericId(order.id)}`} target="_top">{order.name}</a><span className="secondary"><StatusBadge label={paymentLabel} tone={statusTone(paymentLabel)} /></span></td><td><span>{parts.date}</span><span className="secondary">{parts.time}</span></td><td>{order.customer ? <a className="customer-name" href={`shopify://admin/customers/${shopifyNumericId(order.customer.id)}`} target="_top">{customerLabel}</a> : <span className="customer-name">{customerLabel}</span>}<span className="customer-email">{order.customer?.email || order.email || "—"}</span></td><td><StatusBadge label={paymentLabel} tone={statusTone(paymentLabel)} /></td><td><StatusBadge label={fulfillmentLabel} tone={fulfillmentLabel === "Fulfilled" ? "success" : fulfillmentLabel === "Partially Fulfilled" ? "warning" : "warning"} /></td><td><span>{money(order.totalPrice || order.totalPriceSet?.shopMoney?.amount)}</span><span className="secondary">USD</span></td><td><StatusBadge label={syncLabel} tone={statusTone(syncLabel)} /></td><td>{invoiceLabel === "—" ? "—" : <span>{invoiceLabel}</span>}</td><td className="action-col"><div className="action-menu"><button className="dots-button" type="button" aria-label={`Actions for ${order.name}`} onClick={(event) => { event.stopPropagation(); setMenuOrder(menuOrder === order.id ? null : order.id); }}>•••</button>{menuOrder === order.id && <div className="menu" onClick={(event) => event.stopPropagation()}><button type="button" onClick={() => window.open(`shopify://admin/orders/${shopifyNumericId(order.id)}`, "_top")}>View order in Shopify</button><button type="button" onClick={() => {setMenuOrder(null); alert("Use Sync Orders to synchronize the complete order set.");}}>Sync status details</button></div>}</div></td></tr>; })}</tbody></table></div>}
           <div className="table-footer"><span className="showing">Showing {filteredOrders.length ? 1 : 0} to {filteredOrders.length} of {new Intl.NumberFormat().format(totalOrders)} orders</span><div className="pagination"><button className="page-button" disabled={!pageInfo.hasPreviousPage || isLoading} onClick={() => window.location.href = `?before=${encodeURIComponent(pageInfo.startCursor)}`}>‹</button><button className="page-button active">1</button><button className="page-button" disabled={!pageInfo.hasNextPage || isLoading} onClick={() => window.location.href = `?after=${encodeURIComponent(pageInfo.endCursor)}`}>›</button></div></div>
         </div>
       </div>
