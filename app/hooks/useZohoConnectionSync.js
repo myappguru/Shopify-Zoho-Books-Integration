@@ -23,6 +23,7 @@ export function useZohoConnectionSync() {
         .sync-icon.purple s-icon[type="customer"] { display:none; }
         .sync-icon.purple::before { content:"";position:absolute;width:7px;height:7px;border-radius:50%;background:currentColor;top:6px;left:50%;transform:translateX(-50%); }
         .sync-icon.purple::after { content:"";position:absolute;width:14px;height:8px;border-radius:9px 9px 4px 4px;background:currentColor;left:50%;bottom:5px;transform:translateX(-50%); }
+        .tax-table-row { position:relative; }
         .tax-action-wrap { position:relative; display:flex; justify-content:flex-end; align-items:center; }
         .tax-action-menu { position:absolute; right:0; top:34px; z-index:100; min-width:145px; padding:5px; border:1px solid #d8e0ed; border-radius:8px; background:#fff; box-shadow:0 10px 28px rgba(20,35,60,.16); }
         .tax-action-menu button { width:100%; border:0; background:#fff; border-radius:6px; padding:8px 10px; text-align:left; color:#24385d; font-size:11px; cursor:pointer; }
@@ -140,7 +141,7 @@ export function useZohoConnectionSync() {
     return () => {
       document.removeEventListener("click", handleTaxClick, true);
       document.removeEventListener("change", handleTaxChange, true);
-      window.removeEventListener("message", handleMessage);
+      window.removeEventListener("message", handleMessage, true);
       style?.remove();
     };
   }, []);
