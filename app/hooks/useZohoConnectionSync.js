@@ -23,6 +23,15 @@ export function useZohoConnectionSync() {
         .sync-icon.purple s-icon[type="customer"] { display:none; }
         .sync-icon.purple::before { content:"";position:absolute;width:7px;height:7px;border-radius:50%;background:currentColor;top:6px;left:50%;transform:translateX(-50%); }
         .sync-icon.purple::after { content:"";position:absolute;width:14px;height:8px;border-radius:9px 9px 4px 4px;background:currentColor;left:50%;bottom:5px;transform:translateX(-50%); }
+
+        /* Tax Settings controls */
+        .tax-field { display:flex; align-items:center; gap:12px; min-width:0; }
+        .tax-field label { margin:0; color:#24385d; font-size:12px; line-height:18px; font-weight:600; white-space:nowrap; }
+        .tax-field select { width:270px; max-width:100%; height:40px; box-sizing:border-box; border:1px solid #cfd9e8; border-radius:7px; background-color:#fff; color:#17233c; padding:0 36px 0 12px; font-size:12px; line-height:40px; font-family:inherit; cursor:pointer; outline:none; appearance:none; -webkit-appearance:none; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23526783' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 11px center; background-size:14px 14px; transition:border-color .15s ease, box-shadow .15s ease; }
+        .tax-field select:hover { border-color:#aebdd2; }
+        .tax-field select:focus { border-color:#1264ed; box-shadow:0 0 0 2px rgba(18,100,237,.12); }
+        .tax-field select:disabled { background-color:#f8fafc; color:#66758f; cursor:not-allowed; }
+
         .tax-table-row { position:relative; }
         .tax-action-wrap { position:relative; display:flex; justify-content:flex-end; align-items:center; }
         .tax-action-menu { position:absolute; right:0; top:34px; z-index:100; min-width:145px; padding:5px; border:1px solid #d8e0ed; border-radius:8px; background:#fff; box-shadow:0 10px 28px rgba(20,35,60,.16); }
@@ -30,6 +39,11 @@ export function useZohoConnectionSync() {
         .tax-action-menu button:hover { background:#edf5ff; color:#1264ed; }
         .tax-custom-row { background:#fbfdff; }
         .tax-custom-row strong { color:#1264ed; }
+
+        @media(max-width:650px) {
+          .tax-field { align-items:flex-start; flex-direction:column; gap:7px; }
+          .tax-field select { width:100%; }
+        }
       `;
       document.head.appendChild(style);
     }
