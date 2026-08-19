@@ -78,6 +78,7 @@ export const loader = async ({ request }) => {
   const locationsJson = await locationsResponse.json();
   const locations = (locationsJson.data?.locations?.edges || []).map(({ node }) => node);
   return {
+    shopDomain: session.shop,
     connection: connection ? { organizationId: connection.organization_id, organizationName: connection.organization_name, dataCenter: connection.data_center, connectedAt: connection.connected_at, tokenExpiresAt: connection.access_token_expires_at, tokenMasked: token?.accessToken ? `zoho${"•".repeat(28)}${token.accessToken.slice(-4)}` : "zoho••••••••••••••••••••••••••••••••", connectedBy: connection.connected_by || "Zoho Books account", scope: connection.scope || null } : null,
     organization, syncPreferences, locations, locationsError: Boolean(locationsJson.errors) && locations.length === 0,
     warehouses: warehousesResult.items, warehouseMappings, warehouseSyncError: warehousesResult.error,
@@ -101,9 +102,7 @@ export const action = async ({ request }) => {
     await loadZohoList(shop, "accounts", token, () => fetchChartOfAccounts({ accessToken: token.accessToken, apiDomain: token.apiDomain, organizationId: connection.organization_id }), { force: true });
   }
   if (intent === "test-connection" && connection) await getValidAccessToken(shop.id);
-  if (intent === "save-sync-preferences") {
-    await mergeAppSettings(shop.id, "syncPreferences", { products: formData.get("productsEnabled") === "true", orders: formData.get("ordersEnabled") === "true", customers: formData.get("customersEnabled") === "true" });
-  }
+  if (intent === "save-sync-preferences") await mergeAppSettings(shop.id, "syncPreferences", { products: formData.get("productsEnabled") === "true", orders: formData.get("ordersEnabled") === "true", customers: formData.get("customersEnabled") === "true" });
   if (intent === "save-warehouse-mapping") {
     for (const [key, value] of formData.entries()) { if (!key.startsWith("warehouse:")) continue; const locationId = key.slice("warehouse:".length); if (value) await saveWarehouseMapping(shop.id, locationId, value); else await removeWarehouseMapping(shop.id, locationId); }
   }
