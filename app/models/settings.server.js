@@ -111,6 +111,20 @@ export const action = async ({ request }) => {
     for (const [key, value] of formData.entries()) { if (!key.startsWith("taxrate:")) continue; const rateKey = key.slice("taxrate:".length); if (value) rateMap[rateKey] = value; else delete rateMap[rateKey]; }
     await mergeAppSettings(shop.id, "taxSettings", { defaultTaxId: formData.get("defaultTaxId") || null, pricesIncludeTax: formData.get("pricesIncludeTax") === "true", discountBeforeTax: formData.get("discountBeforeTax") === "true", rateMap });
   }
-  if (intent === "save-account-settings") await mergeAppSettings(shop.id, "accountSettings", { salesAccountId: formData.get("salesAccountId") || null, paymentAccountId: formData.get("paymentAccountId") || null, inventoryAccountId: formData.get("inventoryAccountId") || null });
+  if (intent === "save-account-settings") {
+    let accountAccess = [];
+    try { accountAccess = JSON.parse(formData.get("accountAccess") || "[]"); } catch { accountAccess = []; }
+    await mergeAppSettings(shop.id, "accountSettings", {
+      salesAccountId: formData.get("salesAccountId") || null,
+      paymentAccountId: formData.get("paymentAccountId") || null,
+      inventoryAccountId: formData.get("inventoryAccountId") || null,
+      merchantName: formData.get("merchantName") || null,
+      accountEmail: formData.get("accountEmail") || null,
+      ipWhitelisting: formData.get("ipWhitelisting") === "true",
+      emailNotifications: formData.get("emailNotifications") === "true",
+      accountAccess,
+      updatedAt: new Date().toISOString(),
+    });
+  }
   return null;
 };
