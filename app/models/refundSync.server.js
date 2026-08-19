@@ -130,11 +130,22 @@ export async function syncRefundToZoho({ shopId, zohoAuth, refund, zohoInvoiceId
       0,
     );
 
-    await applyZohoCreditNoteToInvoice(zohoAuth, {
-      creditNoteId: creditNote.creditnote_id,
-      invoiceId: zohoInvoiceId,
-      amountApplied: creditTotal,
-    });
+    try {
+      await applyZohoCreditNoteToInvoice(zohoAuth, {
+        creditNoteId: creditNote.creditnote_id,
+        invoiceId: zohoInvoiceId,
+        amountApplied: creditTotal,
+      });
+    } catch (error) {
+      // Zoho treats a fully-paid invoice as internally "closed" (distinct
+      // from the "paid" status it displays) and refuses to link a credit
+      // note to one (code 12006) - confirmed live 2026-08-19 against a real
+      // paid invoice. There's no outstanding balance to offset in that case
+      // anyway, so the credit is refunded straight back to the customer
+      // instead (below) rather than applied against the invoice - the
+      // credit note itself was already created successfully above either way.
+      if (error.details?.code !== 12006) throw error;
+    }
 
     if (refund.amount > 0) {
       await createZohoCreditNoteRefund(zohoAuth, {
