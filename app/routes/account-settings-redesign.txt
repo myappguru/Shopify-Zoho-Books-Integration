@@ -1,1 +1,0 @@
-Account Settings redesign is maintained in app/routes/app.settings.account.jsx
