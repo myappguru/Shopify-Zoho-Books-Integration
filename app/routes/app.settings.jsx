@@ -89,7 +89,7 @@ export default function SettingsPage() {
       .simple-section{padding:0 28px 28px;flex:1}.simple-card{border:1px solid #e2e8f0;border-radius:10px;padding:24px;margin-bottom:16px}.simple-card h3{margin:0 0 8px;font-size:18px}.simple-card p{margin:0 0 16px;font-size:14px;color:#526483}.field-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}.field label{display:block;font-size:13px;font-weight:600;margin-bottom:7px}.field select{width:100%;height:42px;border:1px solid #d5ddea;border-radius:7px;padding:0 10px;background:#fff;font-size:13px}.mapping-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:center;padding:12px 0;border-top:1px solid #edf0f4}.mapping-row:first-child{border-top:0}.save-row{display:flex;justify-content:flex-end;margin-top:18px}.empty-state{padding:40px;text-align:center;color:#66758f;font-size:13px}
       .warehouse-section{padding:0 28px 28px;flex:1;min-width:0}.warehouse-head{min-height:104px;box-sizing:border-box;margin:0 -28px;padding:25px 28px 21px;border-bottom:1px solid #e5eaf1;display:flex;align-items:flex-start;justify-content:space-between;gap:20px}.warehouse-title{margin:0;font-size:21px;line-height:28px;font-weight:700;color:#111827;letter-spacing:-.25px}.warehouse-sub{margin:5px 0 0;font-size:14px;line-height:21px;color:#344563}.warehouse-refresh{height:40px;font-size:13px}.warehouse-form{padding-top:24px}.warehouse-summary{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}.warehouse-stat{height:86px;border:1px solid #dfe6f0;border-radius:10px;padding:15px 18px;box-sizing:border-box;display:flex;flex-direction:column;justify-content:center;gap:7px}.warehouse-stat span{font-size:12px;color:#596a87}.warehouse-stat strong{font-size:23px;line-height:27px;color:#1c2940;font-weight:700}.warehouse-stat .mapped-value{color:#079b57}.warehouse-notice{margin:18px 0;border:1px solid #b8d2ff;background:#f2f7ff;border-radius:8px;min-height:43px;padding:0 13px;box-sizing:border-box;display:flex;align-items:center;gap:9px;color:#38527b;font-size:12px}.warehouse-table{border:1px solid #dfe6f0;border-radius:9px;overflow:hidden;background:#fff}.warehouse-table-head,.warehouse-table-row{display:grid;grid-template-columns:1.55fr 1.05fr 1.35fr .9fr .75fr .45fr;align-items:center}.warehouse-table-head{min-height:45px;padding:0 16px;background:#f8fafc;border-bottom:1px solid #dfe6f0;color:#263856;font-size:11px;font-weight:700}.warehouse-table-row{min-height:76px;padding:0 16px;border-bottom:1px solid #e8edf3;color:#24385d;font-size:12px}.warehouse-table-row:last-child{border-bottom:0}.warehouse-location{display:flex;align-items:center;gap:11px;min-width:0}.warehouse-location-icon{width:34px;height:34px;border-radius:8px;background:#edf5ff;color:#526483;display:grid;place-items:center;flex:0 0 auto}.warehouse-location-icon s-icon{width:17px;height:17px}.warehouse-location strong{display:block;font-size:13px;line-height:18px;color:#17233c;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.warehouse-location small{display:block;margin-top:3px;font-size:10px;line-height:14px;color:#596a87;word-break:break-all}.warehouse-type{font-size:12px;color:#405575}.warehouse-select{width:100%;max-width:202px;height:38px;border:1px solid #cfd9e8;border-radius:7px;background:#fff;padding:0 10px;font-size:12px;color:#17233c}.warehouse-code{font-size:12px;color:#405575;white-space:nowrap;justify-self:center;text-align:center}.warehouse-status{justify-self:center;border-radius:6px;padding:7px 10px;font-size:11px;font-weight:600;display:inline-flex;align-items:center;gap:4px;white-space:nowrap}.warehouse-status.mapped{background:#e8f8ef;color:#078b51}.warehouse-status.unmapped{background:#fff4df;color:#a56700}.warehouse-action{border:0;background:transparent;color:#405575;font-size:20px;line-height:1;cursor:pointer;justify-self:end;padding:7px}.warehouse-footer{display:flex;justify-content:flex-end;padding-top:18px}.warehouse-save{height:40px;padding:0 22px;font-size:13px}.warehouse-empty{padding:40px;text-align:center;color:#66758f;font-size:13px}
       .tax-section{padding:0 28px 28px;flex:1;min-width:0}.tax-head{min-height:104px;box-sizing:border-box;margin:0 -28px;padding:25px 28px 21px;border-bottom:1px solid #e5eaf1;display:flex;align-items:flex-start;justify-content:space-between;gap:20px}.tax-title{margin:0;font-size:21px;line-height:28px;font-weight:700;color:#111827}.tax-sub{margin:5px 0 0;font-size:14px;line-height:21px;color:#344563}.tax-refresh{height:40px;font-size:13px}.tax-form{padding-top:24px}.tax-info{margin:0 0 20px;border:1px solid #b8d2ff;background:#f2f7ff;border-radius:8px;min-height:46px;padding:0 14px;display:flex;align-items:center;gap:10px;color:#38527b;font-size:12px}.tax-summary{display:grid;grid-template-columns:1fr 1fr 1fr 1.15fr;gap:14px;margin-bottom:20px}.tax-summary-card{min-height:96px;border:1px solid #dfe6f0;border-radius:10px;padding:15px 16px;box-sizing:border-box;display:flex;align-items:center;gap:12px}.tax-summary-icon{width:40px;height:40px;border-radius:10px;display:grid;place-items:center;flex:0 0 auto;background:#f1eaff;color:#7040e9}.tax-summary-icon.green{background:#e9f8ef;color:#079b57}.tax-summary-icon.orange{background:#fff4e5;color:#ed8a00}.tax-summary-icon.blue{background:#edf5ff;color:#1264ed}.tax-summary-copy span{display:block;font-size:11px;color:#596a87;margin-bottom:5px}.tax-summary-copy strong{display:block;font-size:19px;line-height:24px;color:#17233c;font-weight:700}.tax-summary-copy small{display:block;font-size:10px;color:#66758f;margin-top:4px}.tax-summary-copy .green-text{color:#079b57}.tax-workspace{border:1px solid #dfe6f0;border-radius:9px;overflow:hidden;background:#fff}.tax-tabs{height:58px;display:flex;align-items:flex-end;padding:0 18px;border-bottom:1px solid #dfe6f0}.tax-tab{height:58px;padding:0 20px;border:0;border-bottom:2px solid transparent;background:#fff;color:#24385d;font-size:13px;font-weight:500;cursor:pointer}.tax-tab.active{color:#1264ed;border-bottom-color:#1264ed;font-weight:600}.tax-toolbar{min-height:58px;display:flex;align-items:center;justify-content:flex-end;padding:0 18px;border-bottom:1px solid #edf0f4}.tax-add{height:36px;padding:0 13px;border:1px solid #d5ddea;background:#fff;border-radius:7px;color:#263856;font-size:12px;font-weight:600;display:flex;align-items:center;gap:7px;cursor:pointer}.tax-table-head,.tax-table-row{display:grid;grid-template-columns:1.05fr .9fr 1.55fr 1.1fr .75fr .35fr;align-items:center;column-gap:12px}.tax-table-head{min-height:48px;padding:0 18px;background:#f8fafc;border-bottom:1px solid #dfe6f0;color:#263856;font-size:10px;font-weight:700}.tax-table-row{min-height:61px;padding:0 18px;border-bottom:1px solid #e8edf3;color:#24385d;font-size:11px}.tax-table-row:last-child{border-bottom:0}.tax-code{color:#526483}.tax-select{width:100%;height:36px;border:1px solid #cfd9e8;border-radius:7px;background:#fff;padding:0 9px;color:#17233c;font-size:11px}.tax-type{line-height:16px;color:#405575}.tax-status{justify-self:start;border-radius:6px;padding:6px 9px;font-size:10px;font-weight:600;white-space:nowrap}.tax-status.mapped{background:#e8f8ef;color:#078b51}.tax-status.unmapped{background:#fff4df;color:#a56700}.tax-action{border:0;background:transparent;color:#405575;font-size:19px;cursor:pointer;justify-self:end}.tax-bottom-note{margin:18px;border:1px solid #b8d2ff;background:#f2f7ff;border-radius:8px;min-height:43px;padding:0 13px;display:flex;align-items:center;gap:9px;color:#38527b;font-size:12px}.tax-settings-panel{padding:22px 18px}.tax-setting-card{border:1px solid #e2e8f0;border-radius:9px;padding:18px;margin-bottom:14px}.tax-setting-card h3{margin:0 0 6px;font-size:14px;color:#17233c}.tax-setting-card p{margin:0 0 14px;font-size:12px;color:#596a87}.tax-checkbox{display:flex;align-items:center;gap:9px;font-size:12px;color:#263856;margin-top:12px}.tax-checkbox input{width:16px;height:16px}.tax-save{display:flex;justify-content:flex-end;padding:18px;border-top:1px solid #e5eaf1}.tax-save button{height:40px;padding:0 22px}.tax-empty{padding:42px 20px;text-align:center;color:#66758f;font-size:12px}
-      .account-section{padding:0 28px 28px;flex:1;min-width:0}.account-head{min-height:104px;box-sizing:border-box;margin:0 -28px;padding:25px 28px 21px;border-bottom:1px solid #e5eaf1;display:flex;align-items:flex-start;justify-content:space-between;gap:20px}.account-title{margin:0;font-size:21px;line-height:28px;font-weight:700;color:#111827}.account-sub{margin:5px 0 0;font-size:14px;line-height:21px;color:#344563}.account-status{height:36px;padding:0 11px;border:1px solid #a8dfc2;background:#effbf4;border-radius:7px;display:flex;align-items:center;gap:7px;color:#078b51;font-size:11px;font-weight:600;white-space:nowrap}.account-dot{width:7px;height:7px;border-radius:50%;background:#08a15b}.account-info-banner{margin:20px 0;border:1px solid #b8d2ff;background:#f2f7ff;border-radius:8px;min-height:48px;padding:0 14px;display:flex;align-items:center;gap:10px;color:#38527b;font-size:12px}.account-card{border:1px solid #dfe6f0;border-radius:9px;background:#fff;overflow:hidden;margin-bottom:18px}.account-card-head{min-height:58px;padding:0 18px;border-bottom:1px solid #e5eaf1;display:flex;align-items:center;justify-content:space-between}.account-card-title{font-size:13px;font-weight:650;color:#17233c}.account-card-sub{font-size:11px;color:#66758f;margin-top:3px}.account-edit{height:33px;padding:0 12px;border:1px solid #d5ddea;background:#fff;border-radius:7px;color:#263856;font-size:11px;font-weight:600;cursor:pointer}.account-details-grid{display:grid;grid-template-columns:repeat(3,1fr)}.account-detail{min-height:72px;padding:14px 18px;border-bottom:1px solid #edf0f4}.account-detail:nth-child(3n+2),.account-detail:nth-child(3n+3){border-left:1px solid #edf0f4}.account-detail:nth-last-child(-n+3){border-bottom:0}.account-detail span{display:block;font-size:10px;color:#66758f;margin-bottom:5px}.account-detail strong{display:block;font-size:12px;color:#24385d;font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.account-access{width:100%;border-collapse:collapse}.account-access th{height:43px;padding:0 16px;text-align:left;background:#f8fafc;border-bottom:1px solid #dfe6f0;color:#263856;font-size:10px;font-weight:700}.account-access td{height:60px;padding:0 16px;border-bottom:1px solid #e8edf3;color:#405575;font-size:11px}.account-access tr:last-child td{border-bottom:0}.account-user{display:flex;align-items:center;gap:10px}.account-avatar{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:#edf5ff;color:#1264ed;font-size:11px;font-weight:700}.account-user strong{display:block;color:#17233c;font-size:11px}.account-user small{display:block;color:#66758f;font-size:11px;margin-top:2px}.access-badge{display:inline-flex;border-radius:6px;padding:5px 8px;font-size:9px;font-weight:650}.access-badge.admin{background:#eeeaff;color:#6941d8}.access-badge.full{background:#e8f8ef;color:#078b51}.access-badge.limited{background:#fff4df;color:#a56700}.account-actions{border:0;background:transparent;color:#526483;font-size:18px;cursor:pointer}.account-security{display:grid;grid-template-columns:1fr 1fr}.security-row{min-height:70px;padding:0 18px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #edf0f4}.security-row:nth-child(2n){border-left:1px solid #edf0f4}.security-row:nth-last-child(-n+2){border-bottom:0}.security-icon{width:34px;height:34px;border-radius:8px;background:#edf5ff;color:#1264ed;display:grid;place-items:center;flex:0 0 auto}.security-icon.green{background:#e9f8ef;color:#079b57}.security-copy{flex:1}.security-copy strong{display:block;font-size:12px;color:#17233c}.security-copy span{display:block;margin-top:3px;font-size:12px;color:#66758f}.security-badge{font-size:11px;font-weight:650;border-radius:6px;padding:5px 8px;background:#e8f8ef;color:#078b51}.security-chevron{color:#7a879c}.account-footer{display:flex;justify-content:flex-end;gap:10px;padding-top:4px}.account-footer .secondary-btn{height:40px}.account-footer .primary-btn{height:40px}
+      .account-section{padding:0 28px 28px;flex:1;min-width:0}.account-head{min-height:104px;box-sizing:border-box;margin:0 -28px;padding:25px 28px 21px;border-bottom:1px solid #e5eaf1;display:flex;align-items:flex-start;justify-content:space-between;gap:20px}.account-title{margin:0;font-size:21px;line-height:28px;font-weight:700;color:#111827}.account-sub{margin:5px 0 0;font-size:14px;line-height:21px;color:#344563}.account-status{height:36px;padding:0 11px;border:1px solid #a8dfc2;background:#effbf4;border-radius:7px;display:flex;align-items:center;gap:7px;color:#078b51;font-size:11px;font-weight:600;white-space:nowrap}.account-dot{width:7px;height:7px;border-radius:50%;background:#08a15b}.account-info-banner{margin:20px 0;border:1px solid #b8d2ff;background:#f2f7ff;border-radius:8px;min-height:48px;padding:0 14px;display:flex;align-items:center;gap:10px;color:#38527b;font-size:12px}.account-card{border:1px solid #dfe6f0;border-radius:9px;background:#fff;overflow:hidden;margin-bottom:18px}.account-card-head{min-height:58px;padding:0 18px;border-bottom:1px solid #e5eaf1;display:flex;align-items:center;justify-content:space-between}.account-card-title{font-size:13px;font-weight:650;color:#17233c}.account-card-sub{font-size:11px;color:#66758f;margin-top:3px}.account-edit{height:33px;padding:0 12px;border:1px solid #d5ddea;background:#fff;border-radius:7px;color:#263856;font-size:11px;font-weight:600;cursor:pointer}.account-details-grid{display:grid;grid-template-columns:repeat(3,1fr)}.account-detail{min-height:72px;padding:14px 18px;border-bottom:1px solid #edf0f4}.account-detail:nth-child(3n+2),.account-detail:nth-child(3n+3){border-left:1px solid #edf0f4}.account-detail:nth-last-child(-n+3){border-bottom:0}.account-detail span{display:block;font-size:10px;color:#66758f;margin-bottom:5px}.account-detail strong{display:block;font-size:12px;color:#24385d;font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.account-access{width:100%;border-collapse:collapse}.account-access th{height:43px;padding:0 16px;text-align:left;background:#f8fafc;border-bottom:1px solid #dfe6f0;color:#263856;font-size:10px;font-weight:700}.account-access td{height:60px;padding:0 16px;border-bottom:1px solid #e8edf3;color:#405575;font-size:11px}.account-access tr:last-child td{border-bottom:0}.account-user{display:flex;align-items:center;gap:10px}.account-avatar{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:#edf5ff;color:#1264ed;font-size:11px;font-weight:700}.account-user strong{display:block;color:#17233c;font-size:11px}.account-user small{display:block;color:#66758f;font-size:11px;margin-top:2px}.access-badge{display:inline-flex;border-radius:6px;padding:5px 8px;font-size:9px;font-weight:650}.access-badge.admin{background:#eeeaff;color:#6941d8}.access-badge.full{background:#e8f8ef;color:#078b51}.access-badge.limited{background:#fff4df;color:#a56700}.account-actions{border:0;background:transparent;color:#526483;font-size:18px;cursor:pointer;position:relative}.account-menu-wrap{position:relative;display:flex;justify-content:flex-end}.account-menu{position:absolute;right:0;top:28px;z-index:20;min-width:145px;padding:5px;border:1px solid #d8e0ed;border-radius:8px;background:#fff;box-shadow:0 10px 28px rgba(20,35,60,.14)}.account-menu button{width:100%;border:0;background:#fff;border-radius:6px;padding:8px 10px;text-align:left;color:#263856;font-size:11px;cursor:pointer}.account-menu button:hover{background:#f3f7fc}.account-menu button.danger{color:#c93636}.account-modal-backdrop{position:fixed;inset:0;z-index:100;background:rgba(15,23,42,.38);display:flex;align-items:center;justify-content:center;padding:20px}.account-modal{width:min(520px,100%);background:#fff;border-radius:12px;box-shadow:0 24px 60px rgba(15,23,42,.22);overflow:hidden}.account-modal-head{padding:18px 20px;border-bottom:1px solid #e5eaf1;display:flex;align-items:center;justify-content:space-between}.account-modal-head h3{margin:0;font-size:16px;color:#17233c}.account-modal-close{border:0;background:transparent;color:#66758f;font-size:20px;cursor:pointer}.account-modal-body{padding:20px}.account-modal-field{margin-bottom:15px}.account-modal-field label{display:block;font-size:11px;font-weight:650;color:#263856;margin-bottom:6px}.account-modal-field input{width:100%;height:40px;border:1px solid #cfd9e8;border-radius:7px;padding:0 10px;box-sizing:border-box;font-size:12px;color:#17233c}.account-modal-actions{display:flex;justify-content:flex-end;gap:10px;padding:14px 20px;border-top:1px solid #e5eaf1}.account-security{display:grid;grid-template-columns:1fr 1fr}.security-row{min-height:70px;padding:0 18px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #edf0f4}.security-row:nth-child(2n){border-left:1px solid #edf0f4}.security-row:nth-last-child(-n+2){border-bottom:0}.security-icon{width:34px;height:34px;border-radius:8px;background:#edf5ff;color:#1264ed;display:grid;place-items:center;flex:0 0 auto}.security-icon.green{background:#e9f8ef;color:#079b57}.security-copy{flex:1}.security-copy strong{display:block;font-size:12px;color:#17233c}.security-copy span{display:block;margin-top:3px;font-size:12px;color:#66758f}.security-badge{font-size:11px;font-weight:650;border-radius:6px;padding:5px 8px;background:#e8f8ef;color:#078b51}.security-chevron{color:#7a879c}.account-footer{display:flex;justify-content:flex-end;gap:10px;padding-top:4px}.account-footer .secondary-btn{height:40px}.account-footer .primary-btn{height:40px}
       @media(max-width:1000px){.warehouse-table{overflow-x:auto}.warehouse-table-head,.warehouse-table-row{min-width:920px}.warehouse-summary{grid-template-columns:1fr 1fr}.tax-summary{grid-template-columns:1fr 1fr}.tax-table{overflow-x:auto}.tax-table-head,.tax-table-row{min-width:940px}.account-details-grid{grid-template-columns:1fr 1fr}.account-security{grid-template-columns:1fr}.security-row:nth-child(2n){border-left:0}}@media(max-width:900px){.settings-shell{grid-template-columns:190px 1fr;min-height:700px}.details-grid{grid-template-columns:1fr}.head-actions{flex-wrap:wrap}.settings-head{flex-direction:column}.connection-status{grid-template-columns:1fr}.org-grid{grid-template-columns:1fr}.org-cell{border-left:0!important}.token-row{grid-template-columns:1fr}.valid{justify-self:start}.tax-summary{grid-template-columns:1fr 1fr}}@media(max-width:650px){.settings-shell{grid-template-columns:1fr}.settings-nav{border-right:0;border-bottom:1px solid #e5eaf1}.settings-nav-title{margin-bottom:6px}.connection-page{padding:0 16px 20px}.connection-status{padding:14px}.box-head{padding:0 12px}.org-cell{padding:12px}.token-row{gap:10px}.content-head{padding:20px 16px}.settings-head{margin-bottom:20px}.store-btn{min-width:210px}.warehouse-section{padding:0 16px 20px}.warehouse-head{margin:0 -16px;padding:20px 16px}.warehouse-summary{grid-template-columns:1fr}.warehouse-form{padding-top:18px}.tax-section{padding:0 16px 20px}.tax-head{margin:0 -16px;padding:20px 16px}.tax-summary{grid-template-columns:1fr}.tax-table-head,.tax-table-row{padding-left:14px;padding-right:14px}.account-section{padding:0 16px 20px}.account-head{margin:0 -16px;padding:20px 16px}.account-details-grid{grid-template-columns:1fr}.account-detail:nth-child(n){border-left:0}.account-security{grid-template-columns:1fr}.account-status{display:none}.account-access{min-width:650px}.account-card{overflow-x:auto}}
     `}</style>
       <div className="settings-page">
@@ -270,6 +270,12 @@ function AccountSection({ data }) {
   const initials = userName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "SA";
   const storeName = data.shopName || data.shopifyStoreName || "My Shopify Store";
   const connectedOn = connection.connectedAt ? formatDate(connection.connectedAt) : "Connected";
+  const [editOpen, setEditOpen] = useState(false);
+  const [accessOpen, setAccessOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [draftName, setDraftName] = useState(userName);
+  const [draftEmail, setDraftEmail] = useState(userEmail);
+
   const accountOptions = (value, name) => (
     <select name={name} className="tax-select" defaultValue={value || ""}>
       <option value="">Select account</option>
@@ -279,24 +285,43 @@ function AccountSection({ data }) {
       })}
     </select>
   );
+
+  const openEditAccount = () => {
+    setDraftName(userName);
+    setDraftEmail(userEmail);
+    setEditOpen(true);
+  };
+
+  const resetAccount = () => {
+    setDraftName(userName);
+    setDraftEmail(userEmail);
+    setEditOpen(false);
+  };
+
   return (
     <div className="account-section">
       <div className="account-head">
         <div><h2 className="account-title">Account Settings</h2><p className="account-sub">Manage your account information, access permissions and security preferences.</p></div>
         <span className="account-status"><span className="account-dot" />Account Active</span>
       </div>
+
       <div className="account-info-banner"><Icon type="info" />Manage your account and integration access from one place. Changes to account mappings are used for future Zoho Books syncs.</div>
+
       <div className="account-card">
-        <div className="account-card-head"><div><div className="account-card-title">Account Information</div><div className="account-card-sub">Your Shopify and Zoho Books account details.</div></div><button className="account-edit" type="button">Edit Account</button></div>
+        <div className="account-card-head">
+          <div><div className="account-card-title">Account Information</div><div className="account-card-sub">Your Shopify and Zoho Books account details.</div></div>
+          <button className="account-edit" type="button" onClick={openEditAccount}>Edit Account</button>
+        </div>
         <div className="account-details-grid">
-          <div className="account-detail"><span>Account Name</span><strong>{userName}</strong></div>
-          <div className="account-detail"><span>Account Email</span><strong>{userEmail}</strong></div>
+          <div className="account-detail"><span>Account Name</span><strong>{draftName}</strong></div>
+          <div className="account-detail"><span>Account Email</span><strong>{draftEmail}</strong></div>
           <div className="account-detail"><span>Shopify Store</span><strong>{storeName}</strong></div>
           <div className="account-detail"><span>Zoho Organization</span><strong>{display(organization.organizationName, connection.organizationName)}</strong></div>
           <div className="account-detail"><span>Connected On</span><strong>{connectedOn}</strong></div>
           <div className="account-detail"><span>Role</span><strong>Administrator</strong></div>
         </div>
       </div>
+
       <div className="account-card">
         <div className="account-card-head"><div><div className="account-card-title">Default Account Mapping</div><div className="account-card-sub">Choose the Zoho Books accounts used by the integration.</div></div></div>
         <Form method="post"><input type="hidden" name="intent" value="save-account-settings" /><div className="account-details-grid">
@@ -305,10 +330,31 @@ function AccountSection({ data }) {
           <div className="account-detail"><span>Inventory Account</span>{accountOptions(settings.inventoryAccountId, "inventoryAccountId")}</div>
         </div><div className="account-footer" style={{ padding: "14px 18px", borderTop: "1px solid #edf0f4" }}><button className="primary-btn" type="submit">Save Mapping</button></div></Form>
       </div>
+
       <div className="account-card">
-        <div className="account-card-head"><div><div className="account-card-title">App Access</div><div className="account-card-sub">Users who can access this Shopify–Zoho Books integration.</div></div><button className="account-edit" type="button">Manage Access</button></div>
-        <table className="account-access"><thead><tr><th>User</th><th>Role</th><th>Access Level</th><th>Access Granted</th><th></th></tr></thead><tbody><tr><td><div className="account-user"><span className="account-avatar">{initials}</span><div><strong>{userName}</strong><small>{userEmail}</small></div></div></td><td><span className="access-badge admin">Administrator</span></td><td><span className="access-badge full">Full Access</span></td><td>{connectedOn}</td><td><button className="account-actions" type="button">⋮</button></td></tr></tbody></table>
+        <div className="account-card-head">
+          <div><div className="account-card-title">App Access</div><div className="account-card-sub">Users who can access this Shopify–Zoho Books integration.</div></div>
+          <button className="account-edit" type="button" onClick={() => setAccessOpen(true)}>Manage Access</button>
+        </div>
+        <table className="account-access"><thead><tr><th>User</th><th>Role</th><th>Access Level</th><th>Access Granted</th><th></th></tr></thead><tbody><tr>
+          <td><div className="account-user"><span className="account-avatar">{initials}</span><div><strong>{draftName}</strong><small>{draftEmail}</small></div></div></td>
+          <td><span className="access-badge admin">Administrator</span></td>
+          <td><span className="access-badge full">Full Access</span></td>
+          <td>{connectedOn}</td>
+          <td>
+            <div className="account-menu-wrap">
+              <button className="account-actions" type="button" aria-label="Account actions" onClick={() => setMenuOpen((value) => !value)}>⋮</button>
+              {menuOpen && (
+                <div className="account-menu">
+                  <button type="button" onClick={() => { setMenuOpen(false); setAccessOpen(true); }}>Manage Access</button>
+                  <button className="danger" type="button" onClick={() => setMenuOpen(false)}>Remove Access</button>
+                </div>
+              )}
+            </div>
+          </td>
+        </tr></tbody></table>
       </div>
+
       <div className="account-card">
         <div className="account-card-head"><div><div className="account-card-title">Security &amp; Preferences</div><div className="account-card-sub">Control security and notification preferences for your account.</div></div></div>
         <div className="account-security">
@@ -316,7 +362,53 @@ function AccountSection({ data }) {
           <div className="security-row"><span className="security-icon green"><Icon type="email" /></span><div className="security-copy"><strong>Email Notifications</strong><span>Receive important integration and account updates.</span></div><span className="security-badge">Enabled</span><span className="security-chevron">›</span></div>
         </div>
       </div>
-      <div className="account-footer"><button className="secondary-btn" type="button">Reset to Default</button><button className="primary-btn" type="button">Save Changes</button></div>
+
+      <div className="account-footer">
+        <button className="secondary-btn" type="button" onClick={resetAccount}>Reset to Default</button>
+        <Form method="post">
+          <input type="hidden" name="intent" value="save-account-settings" />
+          <input type="hidden" name="accountName" value={draftName} />
+          <input type="hidden" name="accountEmail" value={draftEmail} />
+          <input type="hidden" name="salesAccountId" value={settings.salesAccountId || ""} />
+          <input type="hidden" name="paymentAccountId" value={settings.paymentAccountId || ""} />
+          <input type="hidden" name="inventoryAccountId" value={settings.inventoryAccountId || ""} />
+          <button className="primary-btn" type="submit">Save Changes</button>
+        </Form>
+      </div>
+
+      {editOpen && (
+        <div className="account-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditOpen(false); }}>
+          <div className="account-modal" role="dialog" aria-modal="true" aria-labelledby="edit-account-title">
+            <div className="account-modal-head"><h3 id="edit-account-title">Edit Account</h3><button className="account-modal-close" type="button" onClick={() => setEditOpen(false)} aria-label="Close">×</button></div>
+            <Form method="post" onSubmit={() => setEditOpen(false)}>
+              <input type="hidden" name="intent" value="save-account-settings" />
+              <input type="hidden" name="salesAccountId" value={settings.salesAccountId || ""} />
+              <input type="hidden" name="paymentAccountId" value={settings.paymentAccountId || ""} />
+              <input type="hidden" name="inventoryAccountId" value={settings.inventoryAccountId || ""} />
+              <div className="account-modal-body">
+                <div className="account-modal-field"><label htmlFor="account-name">Account Name</label><input id="account-name" name="accountName" value={draftName} onChange={(event) => setDraftName(event.target.value)} /></div>
+                <div className="account-modal-field"><label htmlFor="account-email">Account Email</label><input id="account-email" name="accountEmail" type="email" value={draftEmail} onChange={(event) => setDraftEmail(event.target.value)} /></div>
+              </div>
+              <div className="account-modal-actions"><button className="secondary-btn" type="button" onClick={() => setEditOpen(false)}>Cancel</button><button className="primary-btn" type="submit">Save Account</button></div>
+            </Form>
+          </div>
+        </div>
+      )}
+
+      {accessOpen && (
+        <div className="account-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setAccessOpen(false); }}>
+          <div className="account-modal" role="dialog" aria-modal="true" aria-labelledby="manage-access-title">
+            <div className="account-modal-head"><h3 id="manage-access-title">Manage Access</h3><button className="account-modal-close" type="button" onClick={() => setAccessOpen(false)} aria-label="Close">×</button></div>
+            <div className="account-modal-body">
+              <div className="account-user" style={{ marginBottom: 18 }}><span className="account-avatar">{initials}</span><div><strong>{draftName}</strong><small>{draftEmail}</small></div></div>
+              <div className="account-modal-field"><label>Role</label><input value="Administrator" readOnly /></div>
+              <div className="account-modal-field"><label>Access Level</label><input value="Full Access" readOnly /></div>
+              <div style={{ fontSize: 11, lineHeight: 18, color: "#66758f" }}>The current account is the store administrator and retains full access to the integration.</div>
+            </div>
+            <div className="account-modal-actions"><button className="primary-btn" type="button" onClick={() => setAccessOpen(false)}>Done</button></div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
