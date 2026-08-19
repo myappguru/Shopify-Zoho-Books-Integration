@@ -51,8 +51,65 @@ export function useZohoConnectionSync() {
         .warehouse-mapping-section .warehouse-status{display:inline-flex;width:max-content;padding:5px 8px;border-radius:6px;background:#e8f8ef;color:#0a9858;font-size:10px;font-weight:600;}
         .warehouse-mapping-section .warehouse-status.unmapped{background:#fff3e4;color:#e27d00;}
         .warehouse-mapping-section .warehouse-action{border:0;background:transparent;color:#24385d;font-size:18px;cursor:pointer;}
-        @media(max-width:1000px){.warehouse-mapping-section .warehouse-table-head,.warehouse-mapping-section .warehouse-row{grid-template-columns:1.3fr .8fr 1.2fr .7fr .7fr .3fr}.warehouse-mapping-section .warehouse-summary{grid-template-columns:1fr;}}
-        @media(max-width:700px){.warehouse-mapping-section .warehouse-refresh-form{position:static!important;margin-top:10px}.warehouse-mapping-section .warehouse-table-card{overflow:auto}.warehouse-mapping-section .warehouse-table-head,.warehouse-mapping-section .warehouse-row{min-width:850px}.warehouse-mapping-section .warehouse-summary{margin-left:16px;margin-right:16px}.warehouse-mapping-section .warehouse-info{margin-left:16px;margin-right:16px}.warehouse-mapping-section .warehouse-table-card{margin-left:16px;margin-right:16px}.warehouse-mapping-section .save-row{padding-left:16px;padding-right:16px}}
+
+        /* Tax Settings — pixel alignment against the approved reference. */
+        .settings-page{max-width:1220px!important;}
+        .settings-shell{grid-template-columns:240px minmax(0,1fr)!important;}
+        .settings-nav{padding:22px 12px 20px!important;}
+        .settings-nav-title{display:none!important;}
+        .settings-nav .nav-item{height:46px!important;margin:0 0 13px!important;padding:0 12px!important;}
+        .settings-nav .nav-item:last-child{margin-bottom:0!important;}
+        .tax-section{padding:0 28px 16px!important;}
+        .tax-head{min-height:88px!important;height:88px!important;margin:0 -28px!important;padding:23px 28px 16px!important;}
+        .tax-title{font-size:20px!important;line-height:25px!important;letter-spacing:-.2px;}
+        .tax-sub{font-size:13px!important;line-height:20px!important;margin-top:4px!important;}
+        .tax-refresh{height:43px!important;padding:0 15px!important;font-size:12px!important;border-radius:8px!important;}
+        .tax-form{padding-top:12px!important;}
+        .tax-info{min-height:46px!important;height:46px!important;margin:0 0 28px!important;padding:0 14px!important;font-size:12px!important;border-radius:8px!important;}
+        .tax-summary{grid-template-columns:1fr 1fr 1fr 1.12fr!important;gap:14px!important;margin:0 0 20px!important;}
+        .tax-summary-card{height:98px!important;min-height:98px!important;padding:15px 14px!important;border-radius:9px!important;gap:12px!important;}
+        .tax-summary-icon{width:40px!important;height:40px!important;border-radius:10px!important;}
+        .tax-summary-copy span{font-size:11px!important;margin-bottom:4px!important;white-space:nowrap;}
+        .tax-summary-copy strong{font-size:19px!important;line-height:23px!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+        .tax-summary-copy small{font-size:10px!important;margin-top:4px!important;white-space:nowrap;}
+        .tax-workspace{position:relative!important;border-radius:9px!important;overflow:hidden!important;}
+        .tax-tabs{height:58px!important;padding:0 18px!important;align-items:flex-end!important;}
+        .tax-tab{height:58px!important;padding:0 20px!important;font-size:12px!important;}
+        .tax-toolbar{position:absolute!important;z-index:2!important;top:0!important;right:0!important;min-height:58px!important;height:58px!important;padding:0 18px!important;border:0!important;background:transparent!important;}
+        .tax-add{height:36px!important;padding:0 13px!important;border-radius:7px!important;font-size:11px!important;}
+        .tax-table-head,.tax-table-row{grid-template-columns:1.05fr .9fr 1.55fr 1.1fr .75fr .35fr!important;column-gap:0!important;}
+        .tax-table-head{min-height:48px!important;height:48px!important;padding:0 18px!important;font-size:10px!important;}
+        .tax-table-row{min-height:60px!important;height:60px!important;padding:0 18px!important;font-size:11px!important;}
+        .tax-table-row strong{font-size:11px!important;color:#17233c;}
+        .tax-code{font-size:11px!important;}
+        .tax-select{height:36px!important;font-size:11px!important;border-radius:7px!important;padding:0 9px!important;}
+        .tax-type{font-size:11px!important;line-height:16px!important;}
+        .tax-status{font-size:10px!important;padding:6px 9px!important;border-radius:6px!important;}
+        .tax-action{font-size:19px!important;}
+        .tax-bottom-note{height:43px!important;min-height:43px!important;margin:18px!important;padding:0 13px!important;font-size:11px!important;}
+        .tax-save{height:76px!important;box-sizing:border-box!important;padding:18px!important;align-items:center!important;}
+        .tax-save .primary-btn{height:40px!important;min-width:154px!important;padding:0 20px!important;font-size:12px!important;border-radius:8px!important;}
+        .tax-settings-panel{padding:20px 18px!important;}
+        @media(max-width:1000px){
+          .tax-summary{grid-template-columns:1fr 1fr!important;}
+          .tax-table{overflow-x:auto;}
+          .tax-table-head,.tax-table-row{min-width:900px!important;}
+        }
+        @media(max-width:900px){
+          .settings-shell{grid-template-columns:190px 1fr!important;}
+          .settings-nav{padding-top:16px!important;}
+          .settings-nav .nav-item{margin-bottom:8px!important;}
+        }
+        @media(max-width:650px){
+          .settings-shell{grid-template-columns:1fr!important;}
+          .settings-nav{padding:10px 12px!important;}
+          .settings-nav .nav-item{margin-bottom:5px!important;}
+          .tax-section{padding:0 16px 16px!important;}
+          .tax-head{margin:0 -16px!important;padding:20px 16px 14px!important;height:auto!important;min-height:88px!important;}
+          .tax-form{padding-top:12px!important;}
+          .tax-summary{grid-template-columns:1fr!important;}
+          .tax-toolbar{padding-right:12px!important;}
+        }
       `;
       document.head.appendChild(style);
     }
@@ -102,7 +159,6 @@ export function useZohoConnectionSync() {
         const locationName = strong.textContent.trim();
         const locationId = (select.name || "").replace(/^warehouse:/, "");
         const mappedValue = select.value;
-        const selected = select.options[select.selectedIndex];
         const item = document.createElement("div");
         item.className = "warehouse-row";
         item.innerHTML = `<div class="warehouse-location"><span class="warehouse-location-icon"><s-icon type="store"></s-icon></span><div><span class="warehouse-location-name"></span><span class="warehouse-location-id"></span></div></div><span class="warehouse-type">${index === 0 ? "Warehouse" : "Retail Store"}</span><span class="warehouse-select-cell"></span><span class="warehouse-code">${mappedValue ? `WH-${String(mappedValue).slice(-4).toUpperCase()}` : "—"}</span><span class="warehouse-status ${mappedValue ? "" : "unmapped"}">${mappedValue ? "● Mapped" : "Not mapped"}</span><button class="warehouse-action" type="button" aria-label="Actions">⋮</button>`;
