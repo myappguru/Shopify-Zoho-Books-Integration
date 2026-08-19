@@ -30,7 +30,7 @@ export default function App() {
           <s-link href="/app/orders">{t("app.nav.orders")}</s-link>
           <s-link href="/app/inventory">{t("app.nav.inventory")}</s-link>
           <s-link href="/app/sync-history">{t("app.nav.syncHistory")}</s-link>
-          <s-link href="/app/settings?section=accounts">{t("app.nav.settings")}</s-link>
+          <s-link href="/app/settings/account">{t("app.nav.settings")}</s-link>
           <s-link href="/app/help-support">{t("app.nav.helpSupport")}</s-link>
         </s-app-nav>
 
